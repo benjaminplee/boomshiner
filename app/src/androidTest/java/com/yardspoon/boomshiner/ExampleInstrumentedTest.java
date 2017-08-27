@@ -65,6 +65,7 @@ public class ExampleInstrumentedTest {
         Log.i(TAG, "Boomshiner finished");
     }
 
+    // adb pull /storage/emulated/0/Android/data/com.yardspoon.boomshiner/files/Pictures/screenshot.png
     private void takeScreenShot() {
         if(screenShotPath.exists()) {
             Log.d(TAG, "Removing old screenshot file");
