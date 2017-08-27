@@ -31,6 +31,8 @@ public class ExampleInstrumentedTest {
 
     private UiDevice device;
     private File screenShotPath;
+    private int displayHeight;
+    private int displayWidth;
 
     @Before
     public void setUp() {
@@ -52,6 +54,9 @@ public class ExampleInstrumentedTest {
         Context appContext = InstrumentationRegistry.getTargetContext();
         screenShotPath = new File(appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "screenshot.png");
         Log.d(TAG, "Screenshot path: " + screenShotPath.getPath());
+
+        displayHeight = device.getDisplayHeight();
+        displayWidth = device.getDisplayWidth();
     }
 
     @Test
@@ -59,10 +64,18 @@ public class ExampleInstrumentedTest {
         Log.i(TAG, "Boomshiner started");
 
         pause(LONG_PAUSE_TIMEOUT_MS);
+        pressPlay(); // Start game
 
+        pressPlay(); // Start level
+        pause(SHORT_PAUSE_TIMEOUT_MS);
         takeScreenShot();
 
         Log.i(TAG, "Boomshiner finished");
+    }
+
+    private void pressPlay() {
+//        device.swipe(displayWidth / 2, displayHeight / 3, displayWidth / 2, displayHeight / 3, 1);
+        device.swipe(displayWidth / 2, 2 * displayHeight / 3, displayWidth / 2 + 5, 2 * displayHeight / 3 + 5, 2);
     }
 
     // adb pull /storage/emulated/0/Android/data/com.yardspoon.boomshiner/files/Pictures/screenshot.png
