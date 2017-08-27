@@ -2,8 +2,12 @@ package com.yardspoon.boomshiner;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.os.Environment;
 import android.os.SystemClock;
+import android.support.annotation.NonNull;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.runner.AndroidJUnit4;
 import android.support.test.uiautomator.By;
@@ -16,6 +20,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
 
 import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
 import static org.hamcrest.core.IsNull.notNullValue;
@@ -69,18 +75,46 @@ public class ExampleInstrumentedTest {
         pressPlay(); // Start level
         pause(SHORT_PAUSE_TIMEOUT_MS);
         takeScreenShot();
+        analyzeScreenShot();
 
         Log.i(TAG, "Boomshiner finished");
     }
 
+    private void analyzeScreenShot() {
+        Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath());
+
+        Set<Integer> foundColors = new HashSet<>();
+
+        for (int x = 0; x < displayWidth; x++) {
+            for (int y = 0; y < displayHeight; y++) {
+                foundColors.add(bitmap.getPixel(x, y));
+            }
+        }
+
+        for (Integer pixel : foundColors) {
+            Log.d(TAG, "Found color: " + pixelColorInHex(pixel));
+        }
+
+        bitmap.recycle();
+    }
+
+    @NonNull private String pixelColorInHex(Integer pixel) {
+        String alpha = Integer.toHexString(Color.alpha(pixel)).toUpperCase();
+        String red = Integer.toHexString(Color.red(pixel)).toUpperCase();
+        String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
+        String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
+
+        return "[" + alpha + "|" + red + "|" + green + "|" + blue + "]";
+    }
+
     private void pressPlay() {
-//        device.swipe(displayWidth / 2, displayHeight / 3, displayWidth / 2, displayHeight / 3, 1);
+        Log.d(TAG, "Pressing play");
         device.swipe(displayWidth / 2, 2 * displayHeight / 3, displayWidth / 2 + 5, 2 * displayHeight / 3 + 5, 2);
     }
 
     // adb pull /storage/emulated/0/Android/data/com.yardspoon.boomshiner/files/Pictures/screenshot.png
     private void takeScreenShot() {
-        if(screenShotPath.exists()) {
+        if (screenShotPath.exists()) {
             Log.d(TAG, "Removing old screenshot file");
             screenShotPath.delete();
         }
@@ -89,8 +123,12 @@ public class ExampleInstrumentedTest {
         Log.d(TAG, "Screenshot file created");
     }
 
-    private static void pause(long ms) {
-        SystemClock.sleep(ms);
+    private static void pause(long targetMs) {
+        Log.d(TAG, "Pausing for " + targetMs + "ms");
+
+        long realms = time(() -> SystemClock.sleep(targetMs));
+
+        Log.v(TAG, "It really took " + realms + "ms");
     }
 
     private static long time(Runnable action) {
