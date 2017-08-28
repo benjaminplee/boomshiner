@@ -92,34 +92,50 @@ public class ExampleInstrumentedTest {
     private void analyzeScreenShot() {
         Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath());
 
-        Map<Integer, Integer> foundColors = new HashMap<>();
+//        analyzeColors(bitmap);
+        analyzePositions(bitmap);
 
-        int skip = 2;
+        bitmap.recycle();
+    }
 
-        for (int x = 0; x < displayWidth; x += skip) {
-            for (int y = 0; y < displayHeight; y += skip) {
-                Integer pixel = bitmap.getPixel(x, y);
+    private void analyzePositions(Bitmap bitmap) {
+        processPixels(bitmap, 5, x -> {
+//            Log.d(TAG, x.toString());
+        });
+    }
 
-                if (!ignorePixelColors.contains(pixel)) {
-                    Integer prior = foundColors.get(pixel);
+    private void processPixels(Bitmap bitmap, int skip, Method<Integer> consumer) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
 
-                    if (prior == null) {
-                        prior = 0;
-                    }
-
-                    foundColors.put(pixel, prior + 1);
-                }
+        for (int x = 0; x < width; x += skip) {
+            for (int y = 0; y < height; y += skip) {
+                consumer.call(bitmap.getPixel(x, y));
             }
         }
+    }
+
+    private void analyzeColors(Bitmap bitmap) {
+        Map<Integer, Integer> foundColors = new HashMap<>();
+
+        processPixels(bitmap, 2, pixel -> {
+            if (!ignorePixelColors.contains(pixel)) {
+                Integer prior = foundColors.get(pixel);
+
+                if (prior == null) {
+                    prior = 0;
+                }
+
+                foundColors.put(pixel, prior + 1);
+            }
+        });
 
         for (Integer pixel : foundColors.keySet()) {
             Integer count = foundColors.get(pixel);
-            if (count > 25) {
+            if (count > 50) {
                 Log.d(TAG, "Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
             }
         }
-
-        bitmap.recycle();
     }
 
     @NonNull private String pixelColorInHex(Integer pixel) {
@@ -156,5 +172,9 @@ public class ExampleInstrumentedTest {
         long after = System.nanoTime();
         long elapsed = (after - before) / 1000 / 1000; // convert to ms
         Log.d(TAG, "Time: [" + msg + "] took " + elapsed + "ms");
+    }
+
+    private interface Method<T> {
+        public void call(T t);
     }
 }
