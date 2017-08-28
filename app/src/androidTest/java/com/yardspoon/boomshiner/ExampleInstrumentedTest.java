@@ -37,9 +37,11 @@ public class ExampleInstrumentedTest {
     private static final int LONG_PAUSE_TIMEOUT_MS = 10000;
     private static final int SHORT_PAUSE_TIMEOUT_MS = 2000;
 
-    public static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
+    private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
+    private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
     private static final Set<Integer> ignorePixelColors = new HashSet<Integer>() {{
         add(BACKGROUND_GREEN_PIXEL_COLOR);
+        add(WHITE_TEXT_PIXEL_COLOR);
     }};
 
     private UiDevice device;
@@ -81,8 +83,8 @@ public class ExampleInstrumentedTest {
 
         pressPlay(); // Start level
         pause(SHORT_PAUSE_TIMEOUT_MS);
-        takeScreenShot();
-        analyzeScreenShot();
+        time("Take screenshot", this::takeScreenShot);
+        time("Analyze screenshot", this::analyzeScreenShot);
 
         Log.i(TAG, "Boomshiner finished");
     }
@@ -92,11 +94,13 @@ public class ExampleInstrumentedTest {
 
         Map<Integer, Integer> foundColors = new HashMap<>();
 
-        for (int x = 0; x < displayWidth; x++) {
-            for (int y = 0; y < displayHeight; y++) {
+        int skip = 2;
+
+        for (int x = 0; x < displayWidth; x += skip) {
+            for (int y = 0; y < displayHeight; y += skip) {
                 Integer pixel = bitmap.getPixel(x, y);
 
-                if(!ignorePixelColors.contains(pixel)) {
+                if (!ignorePixelColors.contains(pixel)) {
                     Integer prior = foundColors.get(pixel);
 
                     if (prior == null) {
@@ -110,7 +114,7 @@ public class ExampleInstrumentedTest {
 
         for (Integer pixel : foundColors.keySet()) {
             Integer count = foundColors.get(pixel);
-            if(count > 10) {
+            if (count > 25) {
                 Log.d(TAG, "Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
             }
         }
@@ -143,18 +147,14 @@ public class ExampleInstrumentedTest {
     }
 
     private static void pause(long targetMs) {
-        Log.d(TAG, "Pausing for " + targetMs + "ms");
-
-        long realms = time(() -> SystemClock.sleep(targetMs));
-
-        Log.v(TAG, "It really took " + realms + "ms");
+        time("Pause for " + targetMs + "ms", () -> SystemClock.sleep(targetMs));
     }
 
-    private static long time(Runnable action) {
-        
+    private static void time(String msg, Runnable action) {
         long before = System.nanoTime();
         action.run();
         long after = System.nanoTime();
-        return (after - before) / 1000 / 1000; // convert to ms
+        long elapsed = (after - before) / 1000 / 1000; // convert to ms
+        Log.d(TAG, "Time: [" + msg + "] took " + elapsed + "ms");
     }
 }
