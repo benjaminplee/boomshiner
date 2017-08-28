@@ -20,7 +20,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
@@ -34,6 +36,11 @@ public class ExampleInstrumentedTest {
     private static final int LAUNCH_TIMEOUT_MS = 5000;
     private static final int LONG_PAUSE_TIMEOUT_MS = 10000;
     private static final int SHORT_PAUSE_TIMEOUT_MS = 2000;
+
+    public static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
+    private static final Set<Integer> ignorePixelColors = new HashSet<Integer>() {{
+        add(BACKGROUND_GREEN_PIXEL_COLOR);
+    }};
 
     private UiDevice device;
     private File screenShotPath;
@@ -83,28 +90,40 @@ public class ExampleInstrumentedTest {
     private void analyzeScreenShot() {
         Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath());
 
-        Set<Integer> foundColors = new HashSet<>();
+        Map<Integer, Integer> foundColors = new HashMap<>();
 
         for (int x = 0; x < displayWidth; x++) {
             for (int y = 0; y < displayHeight; y++) {
-                foundColors.add(bitmap.getPixel(x, y));
+                Integer pixel = bitmap.getPixel(x, y);
+
+                if(!ignorePixelColors.contains(pixel)) {
+                    Integer prior = foundColors.get(pixel);
+
+                    if (prior == null) {
+                        prior = 0;
+                    }
+
+                    foundColors.put(pixel, prior + 1);
+                }
             }
         }
 
-        for (Integer pixel : foundColors) {
-            Log.d(TAG, "Found color: " + pixelColorInHex(pixel));
+        for (Integer pixel : foundColors.keySet()) {
+            Integer count = foundColors.get(pixel);
+            if(count > 10) {
+                Log.d(TAG, "Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
+            }
         }
 
         bitmap.recycle();
     }
 
     @NonNull private String pixelColorInHex(Integer pixel) {
-        String alpha = Integer.toHexString(Color.alpha(pixel)).toUpperCase();
         String red = Integer.toHexString(Color.red(pixel)).toUpperCase();
         String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
         String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
 
-        return "[" + alpha + "|" + red + "|" + green + "|" + blue + "]";
+        return "[" + red + "|" + green + "|" + blue + "]";
     }
 
     private void pressPlay() {
@@ -132,6 +151,7 @@ public class ExampleInstrumentedTest {
     }
 
     private static long time(Runnable action) {
+        
         long before = System.nanoTime();
         action.run();
         long after = System.nanoTime();
