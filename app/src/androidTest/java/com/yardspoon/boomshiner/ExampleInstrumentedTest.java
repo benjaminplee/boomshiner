@@ -20,8 +20,10 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -99,18 +101,71 @@ public class ExampleInstrumentedTest {
     }
 
     private void analyzePositions(Bitmap bitmap) {
-        processPixels(bitmap, 5, x -> {
-//            Log.d(TAG, x.toString());
+        List<Box> boxes = new ArrayList<>();
+
+        processPixels(bitmap, 5, (x, y, color) -> {
+            if(!ignorePixelColors.contains(color)) {
+
+                boolean alreadyContained = false;
+                for (Box box : boxes) {
+                    if(box.contains(x, y)) {
+                        alreadyContained = true;
+                        break;
+                    }
+                }
+
+                if(!alreadyContained) {
+                    Box boundingBox = findBoundingBox(bitmap, x, y, color);
+
+                    boxes.add(boundingBox);
+                }
+            }
         });
+
+        for (Box box : boxes) {
+            Log.i(TAG, "Found box: " + box);
+        }
     }
 
-    private void processPixels(Bitmap bitmap, int skip, Method<Integer> consumer) {
+    private Box findBoundingBox(Bitmap bitmap, Integer startX, Integer startY, Integer color) {
+
+        // DIRECTIONS
+        // 1 2 3
+        // 0 * 4
+        // 7 6 5
+
+        int minX = startX;
+        int minY = startY;
+        int maxX = startX;
+        int maxY = startY;
+
+        int foundX = startX;
+        int foundY = startY;
+        int direction = 1; // Assume coming in for initial find from left (direction 0), so go to "next"
+
+        while(foundX != startX || foundY != startY || direction != 0) {
+            int candidateX = moveX(startX, direction);
+            int candidateY = moveY(startY, direction);
+
+            direction = nextDirection(direction);
+
+            if(!ignorePixelColors.contains(bitmap.getPixel(candidateX, candidateY))) {
+                foundX = candidateX;
+                foundY = candidateY;
+            }
+        }
+
+
+        return null;
+    }
+
+    private void processPixels(Bitmap bitmap, int skip, Method<Integer, Integer, Integer> consumer) {
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
 
         for (int x = 0; x < width; x += skip) {
             for (int y = 0; y < height; y += skip) {
-                consumer.call(bitmap.getPixel(x, y));
+                consumer.call(x, y, bitmap.getPixel(x, y));
             }
         }
     }
@@ -118,15 +173,15 @@ public class ExampleInstrumentedTest {
     private void analyzeColors(Bitmap bitmap) {
         Map<Integer, Integer> foundColors = new HashMap<>();
 
-        processPixels(bitmap, 2, pixel -> {
-            if (!ignorePixelColors.contains(pixel)) {
-                Integer prior = foundColors.get(pixel);
+        processPixels(bitmap, 2, (x, y, color) -> {
+            if (!ignorePixelColors.contains(color)) {
+                Integer prior = foundColors.get(color);
 
                 if (prior == null) {
                     prior = 0;
                 }
 
-                foundColors.put(pixel, prior + 1);
+                foundColors.put(color, prior + 1);
             }
         });
 
@@ -174,7 +229,34 @@ public class ExampleInstrumentedTest {
         Log.d(TAG, "Time: [" + msg + "] took " + elapsed + "ms");
     }
 
-    private interface Method<T> {
-        public void call(T t);
+    private interface Method<T1, T2, T3> {
+        void call(T1 t1, T2 t2, T3 t3);
+    }
+
+    private class Box {
+
+        public final int x1;
+        public final int y1;
+        public final int x2;
+        public final int y2;
+
+        private Box(int x1, int y1, int x2, int y2) {
+            this.x1 = x1;
+            this.y1 = y1;
+            this.x2 = x2;
+            this.y2 = y2;
+        }
+
+        private boolean contains(int x, int y) {
+            return x > x1 && x < x2 && y > y1 && y < y2;
+        }
+
+        @Override public String toString() {
+            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "]";
+        }
+
+        private String toPointString(int x, int y) {
+            return "(" + x + "," + y + ")";
+        }
     }
 }
