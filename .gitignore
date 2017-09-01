@@ -53,5 +53,6 @@ google-services.json
 freeline.py
 freeline/
 freeline_project_description.json
+
 screenshot.png
-screenshot_analyzed.png
+*_analyzed.png
