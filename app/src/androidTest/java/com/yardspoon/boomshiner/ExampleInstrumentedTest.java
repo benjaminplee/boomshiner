@@ -4,7 +4,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.os.Environment;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
@@ -20,6 +23,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,12 +49,14 @@ public class ExampleInstrumentedTest {
     private static final Set<Integer> ignorePixelColors = new HashSet<Integer>() {{
         add(BACKGROUND_GREEN_PIXEL_COLOR);
         add(WHITE_TEXT_PIXEL_COLOR);
+        add(Color.BLACK);
     }};
 
     private UiDevice device;
     private File screenShotPath;
     private int displayHeight;
     private int displayWidth;
+    private File picsDir;
 
     @Before
     public void setUp() {
@@ -69,7 +76,8 @@ public class ExampleInstrumentedTest {
         device.wait(Until.hasObject(By.pkg(BOOMSHINE_PACKAGE).depth(0)), LAUNCH_TIMEOUT_MS);
 
         Context appContext = InstrumentationRegistry.getTargetContext();
-        screenShotPath = new File(appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "screenshot.png");
+        picsDir = appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        screenShotPath = new File(picsDir, "screenshot.png");
         Log.d(TAG, "Screenshot path: " + screenShotPath.getPath());
 
         displayHeight = device.getDisplayHeight();
@@ -77,7 +85,7 @@ public class ExampleInstrumentedTest {
     }
 
     @Test
-    public void boomshiner() throws Exception {
+    public void run_boomshiner() throws Exception {
         Log.i(TAG, "Boomshiner started");
 
         pause(LONG_PAUSE_TIMEOUT_MS);
@@ -91,48 +99,114 @@ public class ExampleInstrumentedTest {
         Log.i(TAG, "Boomshiner finished");
     }
 
-    private void analyzeScreenShot() {
-        Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath());
+    @Test
+    public void test_contour_tracing_algorithm() {
+        BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+        bitmapOptions.inMutable = true;
+        bitmapOptions.inScaled = false;
+        Bitmap bitmap = BitmapFactory.decodeResource(InstrumentationRegistry.getTargetContext().getResources(), R.drawable.test_png, bitmapOptions);
 
-//        analyzeColors(bitmap);
         analyzePositions(bitmap);
+
+        write(bitmap, new File(picsDir, "test_analyzed.png"));
 
         bitmap.recycle();
     }
 
-    private void analyzePositions(Bitmap bitmap) {
-        List<Box> boxes = new ArrayList<>();
+    private void analyzeScreenShot() {
+        Log.i(TAG, "analyzing screen shots");
 
-        processPixels(bitmap, 5, (x, y, color) -> {
-            if(!ignorePixelColors.contains(color)) {
+        Log.d(TAG, "decoding png");
+        BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+        bitmapOptions.inMutable = true;
+        bitmapOptions.inScaled = false;
+        Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath(), bitmapOptions);
 
-                boolean alreadyContained = false;
-                for (Box box : boxes) {
-                    if(box.contains(x, y)) {
-                        alreadyContained = true;
-                        break;
-                    }
+//        analyzeColors(bitmap);
+        analyzePositions(bitmap);
+
+        Log.d(TAG, "writing out png");
+        write(bitmap, new File(picsDir, "screenshot_analyzed.png"));
+
+        Log.d(TAG, "recycling mutable bitmap");
+        bitmap.recycle();
+    }
+
+    private void write(Bitmap bitmap, File file) {
+        FileOutputStream out = null;
+        try {
+            out = new FileOutputStream(file.getPath());
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+        } catch (Exception e) {
+            Log.e(TAG, "Couldn't write out bitmap", e);
+        } finally {
+            try {
+                if (out != null) {
+                    out.close();
                 }
-
-                if(!alreadyContained) {
-                    Box boundingBox = findBoundingBox(bitmap, x, y, color);
-
-                    boxes.add(boundingBox);
-                }
+            } catch (IOException e) {
+                Log.e(TAG, "Couldn't close file stream for bitmap", e);
             }
-        });
-
-        for (Box box : boxes) {
-            Log.i(TAG, "Found box: " + box);
         }
     }
 
-    private Box findBoundingBox(Bitmap bitmap, Integer startX, Integer startY, Integer color) {
+    private void draw(Bitmap bitmap, List<Box> boxes) {
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint paint = new Paint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(Color.WHITE);
+        paint.setAntiAlias(false);
+
+        for (Box box : boxes) {
+            canvas.drawRect(new Rect(box.x1, box.y1, box.x2, box.y2), paint);
+        }
+    }
+
+    private void analyzePositions(Bitmap bitmap) {
+        Log.i(TAG, "analysing positions");
+
+        List<Box> boxes = new ArrayList<>();
+
+        time("processing pixels", () -> {
+            processPixels(bitmap, 2, (x, y, color) -> {
+//                if (!boxes.isEmpty()) {
+//                    return;
+//                }
+
+                if (!ignorePixelColors.contains(color)) {
+//                    bitmap.setPixel(x, y, Color.WHITE);
+
+                    boolean alreadyContained = false;
+                    for (Box box : boxes) {
+                        if (box.contains(x, y)) {
+                            alreadyContained = true;
+                            break;
+                        }
+                    }
+
+                    if (!alreadyContained) {
+                        Box boundingBox = findBoundingBox(bitmap, x, y);
+                        Log.i(TAG, "Found box: " + boundingBox);
+                        boxes.add(boundingBox);
+                    }
+                }
+            });
+        });
+
+        time("drawing boxes on bitmap", () -> draw(bitmap, boxes));
+    }
+
+    private Box findBoundingBox(Bitmap bitmap, Integer startX, Integer startY) {
+
+        int offset = 1;
 
         // DIRECTIONS
         // 1 2 3
         // 0 * 4
         // 7 6 5
+
+        Log.d(TAG, "Looking for bounding from " + startX + "," + startY);
 
         int minX = startX;
         int minY = startY;
@@ -143,28 +217,77 @@ public class ExampleInstrumentedTest {
         int foundY = startY;
         int direction = 1; // Assume coming in for initial find from left (direction 0), so go to "next"
 
-        while(foundX != startX || foundY != startY || direction != 0) {
-            int candidateX = moveX(startX, direction);
-            int candidateY = moveY(startY, direction);
+        do {
+            int candidateX = nextX(foundX, direction);
+            int candidateY = nextY(foundY, direction);
 
-            direction = nextDirection(direction);
+            Log.d(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
-            if(!ignorePixelColors.contains(bitmap.getPixel(candidateX, candidateY))) {
+            if (foundNextPixel(bitmap, candidateX, candidateY)) {
+                Log.d(TAG, "Found next pixel in border!");
                 foundX = candidateX;
                 foundY = candidateY;
+
+                direction = flipDirection(direction);
+
+                minX = Math.min(minX, foundX);
+                minY = Math.min(minY, foundY);
+                maxX = Math.max(maxX, foundX);
+                maxY = Math.max(maxY, foundY);
+            } else {
+                Log.d(TAG, "Not a match, moving on");
             }
-        }
 
+            direction = nextDirection(direction);
+        } while (foundX != startX || foundY != startY || direction != 0);
 
-        return null;
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset);
     }
 
-    private void processPixels(Bitmap bitmap, int skip, Method<Integer, Integer, Integer> consumer) {
+    private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY) {
+        return candidateX >= 0 && candidateX < bitmap.getWidth() &&
+                candidateY >= 0 && candidateY < bitmap.getHeight() &&
+                !ignorePixelColors.contains(bitmap.getPixel(candidateX, candidateY));
+    }
+
+    private int flipDirection(int priorDirection) {
+        return (priorDirection + 4) % 8;
+    }
+
+    private int nextDirection(int priorDirection) {
+        return (priorDirection + 1) % 8;
+    }
+
+    private int nextY(Integer priorY, int direction) {
+        if (direction == 1 || direction == 2 || direction == 3) {
+            return priorY - 1;
+        }
+
+        if (direction == 5 || direction == 6 || direction == 7) {
+            return priorY + 1;
+        }
+
+        return priorY;
+    }
+
+    private int nextX(Integer priorX, int direction) {
+        if (direction == 0 || direction == 1 || direction == 7) {
+            return priorX - 1;
+        }
+
+        if (direction == 3 || direction == 4 || direction == 5) {
+            return priorX + 1;
+        }
+
+        return priorX;
+    }
+
+    private void processPixels(Bitmap bitmap, int rowSkip, Method<Integer, Integer, Integer> consumer) {
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
 
-        for (int x = 0; x < width; x += skip) {
-            for (int y = 0; y < height; y += skip) {
+        for (int y = 0; y < height; y += rowSkip) {
+            for (int x = 0; x < width; x += 1) {
                 consumer.call(x, y, bitmap.getPixel(x, y));
             }
         }
@@ -193,7 +316,8 @@ public class ExampleInstrumentedTest {
         }
     }
 
-    @NonNull private String pixelColorInHex(Integer pixel) {
+    @NonNull
+    private String pixelColorInHex(Integer pixel) {
         String red = Integer.toHexString(Color.red(pixel)).toUpperCase();
         String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
         String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
@@ -251,7 +375,8 @@ public class ExampleInstrumentedTest {
             return x > x1 && x < x2 && y > y1 && y < y2;
         }
 
-        @Override public String toString() {
+        @Override
+        public String toString() {
             return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "]";
         }
 
