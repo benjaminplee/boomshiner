@@ -170,12 +170,7 @@ public class ExampleInstrumentedTest {
 
         time("processing pixels", () -> {
             processPixels(bitmap, 2, (x, y, color) -> {
-//                if (!boxes.isEmpty()) {
-//                    return;
-//                }
-
                 if (!ignorePixelColors.contains(color)) {
-//                    bitmap.setPixel(x, y, Color.WHITE);
 
                     boolean alreadyContained = false;
                     for (Box box : boxes) {
@@ -206,7 +201,7 @@ public class ExampleInstrumentedTest {
         // 0 * 4
         // 7 6 5
 
-        Log.d(TAG, "Looking for bounding from " + startX + "," + startY);
+//        Log.v(TAG, "Looking for bounding from " + startX + "," + startY);
 
         int minX = startX;
         int minY = startY;
@@ -221,10 +216,10 @@ public class ExampleInstrumentedTest {
             int candidateX = nextX(foundX, direction);
             int candidateY = nextY(foundY, direction);
 
-            Log.d(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
+//            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
             if (foundNextPixel(bitmap, candidateX, candidateY)) {
-                Log.d(TAG, "Found next pixel in border!");
+//                Log.v(TAG, "Found next pixel in border!");
                 foundX = candidateX;
                 foundY = candidateY;
 
@@ -235,7 +230,7 @@ public class ExampleInstrumentedTest {
                 maxX = Math.max(maxX, foundX);
                 maxY = Math.max(maxY, foundY);
             } else {
-                Log.d(TAG, "Not a match, moving on");
+//                Log.v(TAG, "Not a match, moving on");
             }
 
             direction = nextDirection(direction);
