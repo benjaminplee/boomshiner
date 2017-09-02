@@ -26,11 +26,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
 import static org.hamcrest.core.IsNull.notNullValue;
@@ -41,19 +37,15 @@ public class ExampleInstrumentedTest {
     private static final String TAG = "BOOMSHINER";
     private static final String BOOMSHINE_PACKAGE = "com.bantambytes.android.game.boomshine";
     private static final int LAUNCH_TIMEOUT_MS = 5000;
-    private static final int LONG_PAUSE_TIMEOUT_MS = 10000;
-    private static final int SHORT_PAUSE_TIMEOUT_MS = 2000;
+    private static final int MEDIUM_PAUSE_TIMEOUT_MS = 2000;
+    private static final int LONG_PAUSE_TIMEOUT_MS = 8000;
 
+    private static final int SHORT_PAUSE_TIMEOUT_MS = 1000;
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
-    private static final Set<Integer> ignorePixelColors = new HashSet<Integer>() {{
-        add(BACKGROUND_GREEN_PIXEL_COLOR);
-        add(WHITE_TEXT_PIXEL_COLOR);
-        add(Color.BLACK);
-    }};
 
     private UiDevice device;
-    private File screenShotPath;
+    private List<Screenshot> screenshots;
     private int displayHeight;
     private int displayWidth;
     private File picsDir;
@@ -70,6 +62,9 @@ public class ExampleInstrumentedTest {
 
         Context context = InstrumentationRegistry.getContext();
         final Intent intent = context.getPackageManager().getLaunchIntentForPackage(BOOMSHINE_PACKAGE);
+        if (intent == null) {
+            throw new RuntimeException("Boomshine not installed");
+        }
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
         context.startActivity(intent);
 
@@ -77,8 +72,8 @@ public class ExampleInstrumentedTest {
 
         Context appContext = InstrumentationRegistry.getTargetContext();
         picsDir = appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-        screenShotPath = new File(picsDir, "screenshot.png");
-        Log.d(TAG, "Screenshot path: " + screenShotPath.getPath());
+        Log.d(TAG, "Pics Dir: " + picsDir.getPath());
+        screenshots = new ArrayList<>();
 
         displayHeight = device.getDisplayHeight();
         displayWidth = device.getDisplayWidth();
@@ -88,15 +83,29 @@ public class ExampleInstrumentedTest {
     public void run_boomshiner() throws Exception {
         Log.i(TAG, "Boomshiner started");
 
-        pause(LONG_PAUSE_TIMEOUT_MS);
+        pause(LONG_PAUSE_TIMEOUT_MS); // wait for game to load and get past initial screens
         pressPlay(); // Start game
-
+        pause(MEDIUM_PAUSE_TIMEOUT_MS); // wait for screen to fully display
         pressPlay(); // Start level
+        pause(MEDIUM_PAUSE_TIMEOUT_MS); // wait for screen to fully display
+        time("Take screenshot", this::takeScreenShot);
         pause(SHORT_PAUSE_TIMEOUT_MS);
         time("Take screenshot", this::takeScreenShot);
-        time("Analyze screenshot", this::analyzeScreenShot);
+        pause(SHORT_PAUSE_TIMEOUT_MS);
+        time("Take screenshot", this::takeScreenShot);
+
+        List<Finding> findings = new ArrayList<>();
+        for (Screenshot screenshot : screenshots) {
+            time("Review screenshot", () -> findings.add(reviewScreenshot(screenshot)));
+        }
+
+        time("Analyze findings", () -> analyze(findings));
 
         Log.i(TAG, "Boomshiner finished");
+    }
+
+    private void analyze(List<Finding> findings) {
+
     }
 
     @Test
@@ -106,30 +115,38 @@ public class ExampleInstrumentedTest {
         bitmapOptions.inScaled = false;
         Bitmap bitmap = BitmapFactory.decodeResource(InstrumentationRegistry.getTargetContext().getResources(), R.drawable.test_png, bitmapOptions);
 
-        analyzePositions(bitmap);
+        analyzePositions(bitmap, new Finding(0));
 
         write(bitmap, new File(picsDir, "test_analyzed.png"));
 
         bitmap.recycle();
     }
 
-    private void analyzeScreenShot() {
-        Log.i(TAG, "analyzing screen shots");
+    private Finding reviewScreenshot(Screenshot screenshot) {
+        Log.i(TAG, "reviewing screen shots");
 
-        Log.d(TAG, "decoding png");
-        BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
-        bitmapOptions.inMutable = true;
-        bitmapOptions.inScaled = false;
-        Bitmap bitmap = BitmapFactory.decodeFile(screenShotPath.getAbsolutePath(), bitmapOptions);
+        Finding finding = new Finding(screenshot.nanoTime);
+        Bitmap bitmap = getBitmap(screenshot.file);
 
 //        analyzeColors(bitmap);
-        analyzePositions(bitmap);
+        analyzePositions(bitmap, finding);
 
         Log.d(TAG, "writing out png");
-        write(bitmap, new File(picsDir, "screenshot_analyzed.png"));
+        write(bitmap, screenshot.analyzedFile);
 
         Log.d(TAG, "recycling mutable bitmap");
         bitmap.recycle();
+
+        return finding;
+    }
+
+    private Bitmap getBitmap(File file) {
+        Log.d(TAG, "decoding image");
+        BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+        bitmapOptions.inMutable = true;
+        bitmapOptions.inScaled = false;
+        bitmapOptions.inPurgeable = true;
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), bitmapOptions);
     }
 
     private void write(Bitmap bitmap, File file) {
@@ -150,12 +167,12 @@ public class ExampleInstrumentedTest {
         }
     }
 
-    private void draw(Bitmap bitmap, List<Box> boxes) {
+    private void draw(Bitmap bitmap, List<Box> boxes, int color) {
         Canvas canvas = new Canvas(bitmap);
 
         Paint paint = new Paint();
         paint.setStyle(Paint.Style.STROKE);
-        paint.setColor(Color.WHITE);
+        paint.setColor(color);
         paint.setAntiAlias(false);
 
         for (Box box : boxes) {
@@ -163,36 +180,48 @@ public class ExampleInstrumentedTest {
         }
     }
 
-    private void analyzePositions(Bitmap bitmap) {
+    private void analyzePositions(Bitmap bitmap, Finding finding) {
         Log.i(TAG, "analysing positions");
 
-        List<Box> boxes = new ArrayList<>();
-
         time("processing pixels", () -> {
-            processPixels(bitmap, 2, (x, y, color) -> {
-                if (!ignorePixelColors.contains(color)) {
+            int rowSkip = 10;
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
 
-                    boolean alreadyContained = false;
-                    for (Box box : boxes) {
-                        if (box.contains(x, y)) {
-                            alreadyContained = true;
-                            break;
+            for (int y = 0; y < height; y += rowSkip) {
+                for (int x = 0; x < width; x += 1) {
+                    int color = bitmap.getPixel(x, y);
+
+                    if (!isBackground(color)) {
+
+                        boolean alreadyContained = false;
+                        for (Box box : finding.boxes) {
+                            if (box.contains(x, y)) {
+                                alreadyContained = true;
+                                break;
+                            }
+                        }
+
+                        if (!alreadyContained) {
+                            Box boundingBox = findBoundingBox(bitmap, x, y);
+                            Log.i(TAG, "Found box: " + boundingBox);
+                            finding.boxes.add(boundingBox);
                         }
                     }
-
-                    if (!alreadyContained) {
-                        Box boundingBox = findBoundingBox(bitmap, x, y);
-                        Log.i(TAG, "Found box: " + boundingBox);
-                        boxes.add(boundingBox);
-                    }
                 }
-            });
+            }
         });
 
-        time("drawing boxes on bitmap", () -> draw(bitmap, boxes));
+        time("Reviewing finding", finding::review);
+        time("drawing likely target boxes on bitmap", () -> draw(bitmap, finding.likelyTargets, Color.WHITE));
+        time("drawing other boxes target boxes on bitmap", () -> draw(bitmap, finding.unLikelyTargets, Color.RED));
     }
 
-    private Box findBoundingBox(Bitmap bitmap, Integer startX, Integer startY) {
+    private boolean isBackground(int color) {
+        return color == BACKGROUND_GREEN_PIXEL_COLOR || color == WHITE_TEXT_PIXEL_COLOR || color == Color.BLACK;
+    }
+
+    private Box findBoundingBox(Bitmap bitmap, int startX, int startY) {
 
         int offset = 1;
 
@@ -229,8 +258,6 @@ public class ExampleInstrumentedTest {
                 minY = Math.min(minY, foundY);
                 maxX = Math.max(maxX, foundX);
                 maxY = Math.max(maxY, foundY);
-            } else {
-//                Log.v(TAG, "Not a match, moving on");
             }
 
             direction = nextDirection(direction);
@@ -242,7 +269,7 @@ public class ExampleInstrumentedTest {
     private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY) {
         return candidateX >= 0 && candidateX < bitmap.getWidth() &&
                 candidateY >= 0 && candidateY < bitmap.getHeight() &&
-                !ignorePixelColors.contains(bitmap.getPixel(candidateX, candidateY));
+                !isBackground(bitmap.getPixel(candidateX, candidateY));
     }
 
     private int flipDirection(int priorDirection) {
@@ -253,7 +280,7 @@ public class ExampleInstrumentedTest {
         return (priorDirection + 1) % 8;
     }
 
-    private int nextY(Integer priorY, int direction) {
+    private int nextY(int priorY, int direction) {
         if (direction == 1 || direction == 2 || direction == 3) {
             return priorY - 1;
         }
@@ -265,7 +292,7 @@ public class ExampleInstrumentedTest {
         return priorY;
     }
 
-    private int nextX(Integer priorX, int direction) {
+    private int nextX(int priorX, int direction) {
         if (direction == 0 || direction == 1 || direction == 7) {
             return priorX - 1;
         }
@@ -277,48 +304,48 @@ public class ExampleInstrumentedTest {
         return priorX;
     }
 
-    private void processPixels(Bitmap bitmap, int rowSkip, Method<Integer, Integer, Integer> consumer) {
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
+//    private void processPixels(Bitmap bitmap, int rowSkip, Method<Integer, Integer, Integer> consumer) {
+//        int width = bitmap.getWidth();
+//        int height = bitmap.getHeight();
+//
+//        for (int y = 0; y < height; y += rowSkip) {
+//            for (int x = 0; x < width; x += 1) {
+//                consumer.call(x, y, bitmap.getPixel(x, y));
+//            }
+//        }
+//    }
 
-        for (int y = 0; y < height; y += rowSkip) {
-            for (int x = 0; x < width; x += 1) {
-                consumer.call(x, y, bitmap.getPixel(x, y));
-            }
-        }
-    }
+//    private void analyzeColors(Bitmap bitmap) {
+//        Map<Integer, Integer> foundColors = new HashMap<>();
+//
+//        processPixels(bitmap, 2, (x, y, color) -> {
+//            if (!isBackground(color)) {
+//                Integer prior = foundColors.get(color);
+//
+//                if (prior == null) {
+//                    prior = 0;
+//                }
+//
+//                foundColors.put(color, prior + 1);
+//            }
+//        });
+//
+//        for (Integer pixel : foundColors.keySet()) {
+//            Integer count = foundColors.get(pixel);
+//            if (count > 50) {
+//                Log.d(TAG, "Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
+//            }
+//        }
+//    }
 
-    private void analyzeColors(Bitmap bitmap) {
-        Map<Integer, Integer> foundColors = new HashMap<>();
-
-        processPixels(bitmap, 2, (x, y, color) -> {
-            if (!ignorePixelColors.contains(color)) {
-                Integer prior = foundColors.get(color);
-
-                if (prior == null) {
-                    prior = 0;
-                }
-
-                foundColors.put(color, prior + 1);
-            }
-        });
-
-        for (Integer pixel : foundColors.keySet()) {
-            Integer count = foundColors.get(pixel);
-            if (count > 50) {
-                Log.d(TAG, "Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
-            }
-        }
-    }
-
-    @NonNull
-    private String pixelColorInHex(Integer pixel) {
-        String red = Integer.toHexString(Color.red(pixel)).toUpperCase();
-        String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
-        String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
-
-        return "[" + red + "|" + green + "|" + blue + "]";
-    }
+//    @NonNull
+//    private String pixelColorInHex(Integer pixel) {
+//        String red = Integer.toHexString(Color.red(pixel)).toUpperCase();
+//        String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
+//        String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
+//
+//        return "[" + red + "|" + green + "|" + blue + "]";
+//    }
 
     private void pressPlay() {
         Log.d(TAG, "Pressing play");
@@ -327,12 +354,7 @@ public class ExampleInstrumentedTest {
 
     // adb pull /storage/emulated/0/Android/data/com.yardspoon.boomshiner/files/Pictures/screenshot.png
     private void takeScreenShot() {
-        if (screenShotPath.exists()) {
-            Log.d(TAG, "Removing old screenshot file");
-            screenShotPath.delete();
-        }
-
-        device.takeScreenshot(screenShotPath);
+        screenshots.add(new Screenshot(picsDir, device));
         Log.d(TAG, "Screenshot file created");
     }
 
@@ -348,16 +370,20 @@ public class ExampleInstrumentedTest {
         Log.d(TAG, "Time: [" + msg + "] took " + elapsed + "ms");
     }
 
-    private interface Method<T1, T2, T3> {
-        void call(T1 t1, T2 t2, T3 t3);
-    }
+//    private interface Method<T1, T2, T3> {
+//        void call(T1 t1, T2 t2, T3 t3);
+//    }
 
     private class Box {
 
-        public final int x1;
-        public final int y1;
-        public final int x2;
-        public final int y2;
+        private final int likelyTargetSize = 50;
+        private final int likelyTargetMin = 20; // less than half; in case we are on edge
+        private final int likelyTargetMax = 250; // 5 wide; may need to bump up for higher levels
+
+        final int x1;
+        final int y1;
+        final int x2;
+        final int y2;
 
         private Box(int x1, int y1, int x2, int y2) {
             this.x1 = x1;
@@ -372,11 +398,73 @@ public class ExampleInstrumentedTest {
 
         @Override
         public String toString() {
-            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "]";
+            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "]";
         }
 
         private String toPointString(int x, int y) {
             return "(" + x + "," + y + ")";
+        }
+
+        boolean isLikelyTarget() {
+            int width = x2 - x1;
+            int height = y2 - y1;
+
+            return width > likelyTargetMin && width < likelyTargetMax && height > likelyTargetMin && height < likelyTargetMax;
+        }
+    }
+
+    private class Screenshot {
+        final long nanoTime;
+        final File file;
+        final File reviewedFile;
+        final File analyzedFile;
+
+        private Screenshot(File base, UiDevice device) {
+            this.nanoTime = System.nanoTime();
+            this.file = new File(base, getFileName());
+            device.takeScreenshot(file);
+            this.reviewedFile = new File(base, getReviewedFilename());
+            this.analyzedFile = new File(base, getAnalyzedFilename());
+        }
+
+        @NonNull
+        String getFileName() {
+            return "screenshot_" + String.valueOf(nanoTime) + ".bmp";
+        }
+
+        @NonNull
+        String getReviewedFilename() {
+            return "screenshot_" + String.valueOf(nanoTime) + "_reviewed.bmp";
+        }
+
+        @NonNull
+        String getAnalyzedFilename() {
+            return "screenshot_" + String.valueOf(nanoTime) + "_analyzed.bmp";
+        }
+    }
+
+    private class Finding {
+        final List<Box> boxes;
+        final List<Box> likelyTargets;
+        final List<Box> unLikelyTargets;
+        final long nanoTime;
+
+        public Finding(long nanoTime) {
+            this.nanoTime = nanoTime;
+            boxes = new ArrayList<>(64);
+            likelyTargets = new ArrayList<>(64);
+            unLikelyTargets = new ArrayList<>(64);
+        }
+
+        void review() {
+            for (Box box : boxes) {
+                if(box.isLikelyTarget()) {
+                    likelyTargets.add(box);
+                }
+                else {
+                    unLikelyTargets.add(box);
+                }
+            }
         }
     }
 }
