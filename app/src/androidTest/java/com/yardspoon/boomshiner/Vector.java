@@ -1,0 +1,12 @@
+package com.yardspoon.boomshiner;
+
+class Vector {
+    public static final Vector NULL = new Vector(0, 0);
+    public final int deltaX;
+    public final int deltaY;
+
+    Vector(int deltaX, int deltaY) {
+        this.deltaX = deltaX;
+        this.deltaY = deltaY;
+    }
+}

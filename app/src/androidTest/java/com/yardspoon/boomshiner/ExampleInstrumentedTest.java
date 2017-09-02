@@ -10,7 +10,6 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.os.Environment;
 import android.os.SystemClock;
-import android.support.annotation.NonNull;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.runner.AndroidJUnit4;
 import android.support.test.uiautomator.By;
@@ -42,7 +41,7 @@ public class ExampleInstrumentedTest {
     private static final int MEDIUM_PAUSE_TIMEOUT_MS = 2000;
     private static final int LONG_PAUSE_TIMEOUT_MS = 8000;
 
-    private static final int SHORT_PAUSE_TIMEOUT_MS = 1000;
+    private static final int SHORT_PAUSE_TIMEOUT_MS = 200;
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
 
@@ -114,6 +113,12 @@ public class ExampleInstrumentedTest {
 
         List<Vector> vectors = new ArrayList<>(firstSamples.size());
 
+        Finding thirdFinding = findings.get(2);
+        Bitmap third = getBitmap(thirdFinding.screenshot.file);
+
+        draw(third, firstSamples, Color.GRAY);
+        draw(third, secondSamplesCopy, Color.WHITE);
+
         for (Box firstSample : firstSamples) {
             List<Box> matchingColors = new ArrayList<>();
 
@@ -125,6 +130,7 @@ public class ExampleInstrumentedTest {
 
             if (matchingColors.isEmpty()) {
                 Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
+                vectors.add(Vector.NULL);
             } else {
                 Box closestMatch = Collections.min(matchingColors, (box1, box2) -> ((Double) box1.distanceTo(box2)).intValue());
                 Log.d(TAG, "Found best match for " + firstSample + " as " + closestMatch + " with distance " + firstSample.distanceTo(closestMatch));
@@ -133,7 +139,34 @@ public class ExampleInstrumentedTest {
             }
         }
 
-        
+        draw(third, firstSamples, vectors, Color.LTGRAY);
+        draw(third, firstSamples, vectors, Color.LTGRAY);
+
+        Log.d(TAG, "writing out third image");
+        write(third, thirdFinding.screenshot.reviewedFile);
+
+        Log.d(TAG, "recycling mutable bitmap");
+        third.recycle();
+    }
+
+    private void draw(Bitmap bitmap, List<Box> startingPoints, List<Vector> vectors, int color) {
+        Canvas canvas = new Canvas(bitmap);
+
+        Paint paint = new Paint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(color);
+        paint.setAntiAlias(false);
+
+        for (int i = 0; i < startingPoints.size(); i++) {
+            Box startingPoint = startingPoints.get(i);
+            Vector vector = vectors.get(i);
+            int x1 = startingPoint.cx;
+            int y1 = startingPoint.cy;
+            int x2 = x1 + vector.deltaX;
+            int y2 = y1 + vector.deltaY;
+
+            canvas.drawLine(x1, y1, x2, y2, paint);
+        }
     }
 
     @Test
@@ -418,120 +451,4 @@ public class ExampleInstrumentedTest {
 //        void call(T1 t1, T2 t2, T3 t3);
 //    }
 
-    private class Box {
-
-        private final int likelyTargetSize = 50;
-        private final int likelyTargetMin = 20; // less than half; in case we are on edge
-        private final int likelyTargetMax = 250; // 5 wide; may need to bump up for higher levels
-
-        final int x1;
-        final int y1;
-        final int x2;
-        final int y2;
-        final int maxColor;
-        final int cx;
-        final int cy;
-
-        private Box(int x1, int y1, int x2, int y2, int maxColor) {
-            this.x1 = x1;
-            this.y1 = y1;
-            this.x2 = x2;
-            this.y2 = y2;
-            this.cx = x2 - x1;
-            this.cy = y2 - y1;
-            this.maxColor = maxColor;
-        }
-
-        private boolean contains(int x, int y) {
-            return x > x1 && x < x2 && y > y1 && y < y2;
-        }
-
-        @Override
-        public String toString() {
-            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + maxColor + "]";
-        }
-
-        private String toPointString(int x, int y) {
-            return "(" + x + "," + y + ")";
-        }
-
-        boolean isLikelyTarget() {
-            int width = x2 - x1;
-            int height = y2 - y1;
-
-            return width > likelyTargetMin && width < likelyTargetMax && height > likelyTargetMin && height < likelyTargetMax;
-        }
-
-        double distanceTo(Box other) {
-            return Math.sqrt(Math.pow(Math.abs(cx - other.cx), 2) + Math.pow(Math.abs(cy - other.cy), 2));
-        }
-
-        Vector vectorTo(Box other) {
-            return new Vector(other.cx - cx, other.cy - cy);
-        }
-    }
-
-    private class Vector {
-        final int deltaX;
-        final int deltaY;
-
-        private Vector(int deltaX, int deltaY) {
-            this.deltaX = deltaX;
-            this.deltaY = deltaY;
-        }
-    }
-
-    private class Screenshot {
-        final long nanoTime;
-        final File file;
-        final File reviewedFile;
-        final File analyzedFile;
-
-        private Screenshot(File base, UiDevice device) {
-            this.nanoTime = System.nanoTime();
-            this.file = new File(base, getFileName());
-            device.takeScreenshot(file);
-            this.reviewedFile = new File(base, getReviewedFilename());
-            this.analyzedFile = new File(base, getAnalyzedFilename());
-        }
-
-        @NonNull
-        String getFileName() {
-            return "screenshot_" + String.valueOf(nanoTime) + ".bmp";
-        }
-
-        @NonNull
-        String getReviewedFilename() {
-            return "screenshot_" + String.valueOf(nanoTime) + "_reviewed.bmp";
-        }
-
-        @NonNull
-        String getAnalyzedFilename() {
-            return "screenshot_" + String.valueOf(nanoTime) + "_analyzed.bmp";
-        }
-    }
-
-    private class Finding {
-        final List<Box> boxes;
-        final List<Box> likelyTargets;
-        final List<Box> unLikelyTargets;
-        final Screenshot screenshot;
-
-        public Finding(Screenshot screenshot) {
-            this.screenshot = screenshot;
-            boxes = new ArrayList<>(64);
-            likelyTargets = new ArrayList<>(64);
-            unLikelyTargets = new ArrayList<>(64);
-        }
-
-        void review() {
-            for (Box box : boxes) {
-                if (box.isLikelyTarget()) {
-                    likelyTargets.add(box);
-                } else {
-                    unLikelyTargets.add(box);
-                }
-            }
-        }
-    }
 }
