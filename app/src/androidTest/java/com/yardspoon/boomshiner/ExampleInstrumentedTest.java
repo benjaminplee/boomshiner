@@ -17,6 +17,7 @@ import android.support.test.uiautomator.By;
 import android.support.test.uiautomator.UiDevice;
 import android.support.test.uiautomator.Until;
 import android.util.Log;
+import android.util.SparseIntArray;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -26,6 +27,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
@@ -99,13 +101,39 @@ public class ExampleInstrumentedTest {
             time("Review screenshot", () -> findings.add(reviewScreenshot(screenshot)));
         }
 
-        time("Analyze findings", () -> analyze(findings));
+        time("Analyze findings took", () -> analyze(findings));
 
         Log.i(TAG, "Boomshiner finished");
     }
 
     private void analyze(List<Finding> findings) {
+        Log.i(TAG, "Analyzing findings");
 
+        List<Box> firstSamples = findings.get(0).likelyTargets;
+        List<Box> secondSamplesCopy = new ArrayList<>(findings.get(1).likelyTargets);
+
+        List<Vector> vectors = new ArrayList<>(firstSamples.size());
+
+        for (Box firstSample : firstSamples) {
+            List<Box> matchingColors = new ArrayList<>();
+
+            for (Box secondSample : secondSamplesCopy) {
+                if (secondSample.maxColor == firstSample.maxColor) {
+                    matchingColors.add(secondSample);
+                }
+            }
+
+            if (matchingColors.isEmpty()) {
+                Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
+            } else {
+                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> ((Double) box1.distanceTo(box2)).intValue());
+                Log.d(TAG, "Found best match for " + firstSample + " as " + closestMatch + " with distance " + firstSample.distanceTo(closestMatch));
+                secondSamplesCopy.remove(closestMatch);
+                vectors.add(firstSample.vectorTo(closestMatch));
+            }
+        }
+
+        
     }
 
     @Test
@@ -115,7 +143,7 @@ public class ExampleInstrumentedTest {
         bitmapOptions.inScaled = false;
         Bitmap bitmap = BitmapFactory.decodeResource(InstrumentationRegistry.getTargetContext().getResources(), R.drawable.test_png, bitmapOptions);
 
-        analyzePositions(bitmap, new Finding(0));
+        analyzePositions(bitmap, new Finding(null));
 
         write(bitmap, new File(picsDir, "test_analyzed.png"));
 
@@ -125,7 +153,7 @@ public class ExampleInstrumentedTest {
     private Finding reviewScreenshot(Screenshot screenshot) {
         Log.i(TAG, "reviewing screen shots");
 
-        Finding finding = new Finding(screenshot.nanoTime);
+        Finding finding = new Finding(screenshot);
         Bitmap bitmap = getBitmap(screenshot.file);
 
 //        analyzeColors(bitmap);
@@ -232,6 +260,8 @@ public class ExampleInstrumentedTest {
 
 //        Log.v(TAG, "Looking for bounding from " + startX + "," + startY);
 
+        SparseIntArray colors = new SparseIntArray(32);
+
         int minX = startX;
         int minY = startY;
         int maxX = startX;
@@ -247,7 +277,9 @@ public class ExampleInstrumentedTest {
 
 //            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
-            if (foundNextPixel(bitmap, candidateX, candidateY)) {
+            int color = bitmap.getPixel(candidateX, candidateY);
+
+            if (foundNextPixel(bitmap, candidateX, candidateY, color)) {
 //                Log.v(TAG, "Found next pixel in border!");
                 foundX = candidateX;
                 foundY = candidateY;
@@ -258,18 +290,30 @@ public class ExampleInstrumentedTest {
                 minY = Math.min(minY, foundY);
                 maxX = Math.max(maxX, foundX);
                 maxY = Math.max(maxY, foundY);
+
+                colors.put(color, colors.get(color, 0) + 1);
             }
 
             direction = nextDirection(direction);
         } while (foundX != startX || foundY != startY || direction != 0);
 
-        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset);
+        int maxColorCount = 0;
+        int maxColor = 0;
+        for (int i = 0; i < colors.size(); i++) {
+            int colorCount = colors.valueAt(i);
+            if (colorCount > maxColorCount) {
+                maxColorCount = colorCount;
+                maxColor = colors.keyAt(i);
+            }
+        }
+
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, maxColor);
     }
 
-    private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY) {
+    private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY, int color) {
         return candidateX >= 0 && candidateX < bitmap.getWidth() &&
                 candidateY >= 0 && candidateY < bitmap.getHeight() &&
-                !isBackground(bitmap.getPixel(candidateX, candidateY));
+                !isBackground(color);
     }
 
     private int flipDirection(int priorDirection) {
@@ -384,12 +428,18 @@ public class ExampleInstrumentedTest {
         final int y1;
         final int x2;
         final int y2;
+        final int maxColor;
+        final int cx;
+        final int cy;
 
-        private Box(int x1, int y1, int x2, int y2) {
+        private Box(int x1, int y1, int x2, int y2, int maxColor) {
             this.x1 = x1;
             this.y1 = y1;
             this.x2 = x2;
             this.y2 = y2;
+            this.cx = x2 - x1;
+            this.cy = y2 - y1;
+            this.maxColor = maxColor;
         }
 
         private boolean contains(int x, int y) {
@@ -398,7 +448,7 @@ public class ExampleInstrumentedTest {
 
         @Override
         public String toString() {
-            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "]";
+            return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + maxColor + "]";
         }
 
         private String toPointString(int x, int y) {
@@ -410,6 +460,24 @@ public class ExampleInstrumentedTest {
             int height = y2 - y1;
 
             return width > likelyTargetMin && width < likelyTargetMax && height > likelyTargetMin && height < likelyTargetMax;
+        }
+
+        double distanceTo(Box other) {
+            return Math.sqrt(Math.pow(Math.abs(cx - other.cx), 2) + Math.pow(Math.abs(cy - other.cy), 2));
+        }
+
+        Vector vectorTo(Box other) {
+            return new Vector(other.cx - cx, other.cy - cy);
+        }
+    }
+
+    private class Vector {
+        final int deltaX;
+        final int deltaY;
+
+        private Vector(int deltaX, int deltaY) {
+            this.deltaX = deltaX;
+            this.deltaY = deltaY;
         }
     }
 
@@ -447,10 +515,10 @@ public class ExampleInstrumentedTest {
         final List<Box> boxes;
         final List<Box> likelyTargets;
         final List<Box> unLikelyTargets;
-        final long nanoTime;
+        final Screenshot screenshot;
 
-        public Finding(long nanoTime) {
-            this.nanoTime = nanoTime;
+        public Finding(Screenshot screenshot) {
+            this.screenshot = screenshot;
             boxes = new ArrayList<>(64);
             likelyTargets = new ArrayList<>(64);
             unLikelyTargets = new ArrayList<>(64);
@@ -458,10 +526,9 @@ public class ExampleInstrumentedTest {
 
         void review() {
             for (Box box : boxes) {
-                if(box.isLikelyTarget()) {
+                if (box.isLikelyTarget()) {
                     likelyTargets.add(box);
-                }
-                else {
+                } else {
                     unLikelyTargets.add(box);
                 }
             }
