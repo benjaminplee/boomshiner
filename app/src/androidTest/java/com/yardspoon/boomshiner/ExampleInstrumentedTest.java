@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -40,8 +41,8 @@ public class ExampleInstrumentedTest {
     private static final int LAUNCH_TIMEOUT_MS = 5000;
     private static final int MEDIUM_PAUSE_TIMEOUT_MS = 2000;
     private static final int LONG_PAUSE_TIMEOUT_MS = 8000;
+    private static final int SHORT_PAUSE_TIMEOUT_MS = 50;
 
-    private static final int SHORT_PAUSE_TIMEOUT_MS = 200;
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
 
@@ -105,19 +106,29 @@ public class ExampleInstrumentedTest {
         Log.i(TAG, "Boomshiner finished");
     }
 
+    private class Match {
+        final Box start;
+        final Box end;
+        final Vector vector;
+
+        private Match(Box start, Box end) {
+            this.start = start;
+            this.end = end;
+            this.vector = start.vectorTo(end);
+        }
+    }
+
     private void analyze(List<Finding> findings) {
         Log.i(TAG, "Analyzing findings");
 
         List<Box> firstSamples = findings.get(0).likelyTargets;
-        List<Box> secondSamplesCopy = new ArrayList<>(findings.get(1).likelyTargets);
-
-        List<Vector> vectors = new ArrayList<>(firstSamples.size());
+        List<Box> secondSamples = findings.get(1).likelyTargets;
+        List<Box> secondSamplesCopy = new ArrayList<>(secondSamples);
 
         Finding thirdFinding = findings.get(2);
         Bitmap third = getBitmap(thirdFinding.screenshot.file);
 
-        draw(third, firstSamples, Color.GRAY);
-        draw(third, secondSamplesCopy, Color.WHITE);
+        List<Match> matches = new ArrayList<>(firstSamples.size());
 
         for (Box firstSample : firstSamples) {
             List<Box> matchingColors = new ArrayList<>();
@@ -130,17 +141,28 @@ public class ExampleInstrumentedTest {
 
             if (matchingColors.isEmpty()) {
                 Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
-                vectors.add(Vector.NULL);
             } else {
-                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> ((Double) box1.distanceTo(box2)).intValue());
-                Log.d(TAG, "Found best match for " + firstSample + " as " + closestMatch + " with distance " + firstSample.distanceTo(closestMatch));
+                Log.d(TAG, "Found match ...");
+                Log.d(TAG, Arrays.toString(matchingColors.toArray()));
+                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> (int)(firstSample.distanceTo(box1) - firstSample.distanceTo(box2)));
+                Match match = new Match(firstSample, closestMatch);
+                Log.d(TAG, "Found best match for " + firstSample + " as " + closestMatch + " with vector " + firstSample.distanceTo(closestMatch));
                 secondSamplesCopy.remove(closestMatch);
-                vectors.add(firstSample.vectorTo(closestMatch));
+                matches.add(match);
             }
         }
 
-        draw(third, firstSamples, vectors, Color.LTGRAY);
-        draw(third, firstSamples, vectors, Color.LTGRAY);
+        draw(third, firstSamples, Color.GRAY);
+        draw(third, secondSamples, Color.YELLOW);
+
+        long firstSecondDelta = findings.get(1).screenshot.nanoTime - findings.get(0).screenshot.nanoTime;
+        long secondThirdDelta = findings.get(2).screenshot.nanoTime - findings.get(1).screenshot.nanoTime;
+        double multiplier = (double) secondThirdDelta / (double) firstSecondDelta;
+
+        for (Match match : matches) {
+            draw(third, match.start, match.vector, Color.GRAY);
+            draw(third, match.end, match.vector.multiply(multiplier), Color.YELLOW);
+        }
 
         Log.d(TAG, "writing out third image");
         write(third, thirdFinding.screenshot.reviewedFile);
@@ -149,24 +171,22 @@ public class ExampleInstrumentedTest {
         third.recycle();
     }
 
-    private void draw(Bitmap bitmap, List<Box> startingPoints, List<Vector> vectors, int color) {
+    private void draw(Bitmap bitmap, Box startingPoint, Vector vector, int color) {
         Canvas canvas = new Canvas(bitmap);
 
         Paint paint = new Paint();
         paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2);
         paint.setColor(color);
         paint.setAntiAlias(false);
 
-        for (int i = 0; i < startingPoints.size(); i++) {
-            Box startingPoint = startingPoints.get(i);
-            Vector vector = vectors.get(i);
-            int x1 = startingPoint.cx;
-            int y1 = startingPoint.cy;
-            int x2 = x1 + vector.deltaX;
-            int y2 = y1 + vector.deltaY;
+        int x1 = startingPoint.cx;
+        int y1 = startingPoint.cy;
+        int x2 = x1 + vector.deltaX;
+        int y2 = y1 + vector.deltaY;
 
-            canvas.drawLine(x1, y1, x2, y2, paint);
-        }
+        Log.v(TAG, "Drawing line: (" + x1 + "," + y1 + ") to (" + x2 + "," + y2 + ")");
+        canvas.drawLine(x1, y1, x2, y2, paint);
     }
 
     @Test
@@ -293,7 +313,6 @@ public class ExampleInstrumentedTest {
 
 //        Log.v(TAG, "Looking for bounding from " + startX + "," + startY);
 
-        SparseIntArray colors = new SparseIntArray(32);
 
         int minX = startX;
         int minY = startY;
@@ -310,9 +329,7 @@ public class ExampleInstrumentedTest {
 
 //            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
-            int color = bitmap.getPixel(candidateX, candidateY);
-
-            if (foundNextPixel(bitmap, candidateX, candidateY, color)) {
+            if (foundNextPixel(bitmap, candidateX, candidateY)) {
 //                Log.v(TAG, "Found next pixel in border!");
                 foundX = candidateX;
                 foundY = candidateY;
@@ -323,13 +340,26 @@ public class ExampleInstrumentedTest {
                 minY = Math.min(minY, foundY);
                 maxX = Math.max(maxX, foundX);
                 maxY = Math.max(maxY, foundY);
-
-                colors.put(color, colors.get(color, 0) + 1);
             }
 
             direction = nextDirection(direction);
         } while (foundX != startX || foundY != startY || direction != 0);
 
+        int maxColor = findMaxColor(bitmap, minX, minY, maxX, maxY);
+
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, maxColor);
+    }
+
+    private int findMaxColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+        SparseIntArray colors = new SparseIntArray(32);
+        for (int x = minX; x < maxX; x++) {
+            for (int y = minY; y < maxY; y++) {
+                int color = bitmap.getPixel(x, y);
+                if (!isBackground(color)) {
+                    colors.put(color, colors.get(color, 0) + 1);
+                }
+            }
+        }
         int maxColorCount = 0;
         int maxColor = 0;
         for (int i = 0; i < colors.size(); i++) {
@@ -339,14 +369,13 @@ public class ExampleInstrumentedTest {
                 maxColor = colors.keyAt(i);
             }
         }
-
-        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, maxColor);
+        return maxColor;
     }
 
-    private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY, int color) {
+    private boolean foundNextPixel(Bitmap bitmap, int candidateX, int candidateY) {
         return candidateX >= 0 && candidateX < bitmap.getWidth() &&
                 candidateY >= 0 && candidateY < bitmap.getHeight() &&
-                !isBackground(color);
+                !isBackground(bitmap.getPixel(candidateX, candidateY));
     }
 
     private int flipDirection(int priorDirection) {

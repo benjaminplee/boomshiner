@@ -9,4 +9,12 @@ class Vector {
         this.deltaX = deltaX;
         this.deltaY = deltaY;
     }
+
+    public Vector multiply(double multiplier) {
+        return new Vector(Double.valueOf(deltaX * multiplier).intValue(), Double.valueOf(deltaY * multiplier).intValue());
+    }
+
+    public double distance() {
+        return Math.sqrt((deltaX ^ 2) + (deltaY ^ 2));
+    }
 }
