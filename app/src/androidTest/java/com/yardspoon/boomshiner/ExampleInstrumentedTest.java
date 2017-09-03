@@ -26,8 +26,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
@@ -106,18 +104,6 @@ public class ExampleInstrumentedTest {
         Log.i(TAG, "Boomshiner finished");
     }
 
-    private class Match {
-        final Box start;
-        final Box end;
-        final Vector vector;
-
-        private Match(Box start, Box end) {
-            this.start = start;
-            this.end = end;
-            this.vector = start.vectorTo(end);
-        }
-    }
-
     private void analyze(List<Finding> findings) {
         Log.i(TAG, "Analyzing findings");
 
@@ -143,12 +129,20 @@ public class ExampleInstrumentedTest {
                 Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
             } else {
                 Log.d(TAG, "Found match ...");
-                Log.d(TAG, Arrays.toString(matchingColors.toArray()));
-                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> (int)(firstSample.distanceTo(box1) - firstSample.distanceTo(box2)));
-                Match match = new Match(firstSample, closestMatch);
-                Log.d(TAG, "Found best match for " + firstSample + " as " + closestMatch + " with vector " + firstSample.distanceTo(closestMatch));
-                secondSamplesCopy.remove(closestMatch);
-                matches.add(match);
+//                Log.d(TAG, Arrays.toString(matchingColors.toArray()));
+//                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> (int)(firstSample.distanceTo(box1) - firstSample.distanceTo(box2)));
+
+                for (Box matchingColor : matchingColors) {
+                    Match match = new Match(firstSample, matchingColor);
+                    Log.d(TAG, "  Possible match: " + match);
+//                    secondSamplesCopy.remove(closestMatch);
+                    matches.add(match);
+                }
+
+//                Match match = new Match(firstSample, closestMatch);
+//                Log.d(TAG, "Found match: " + match);
+//                secondSamplesCopy.remove(closestMatch);
+//                matches.add(match);
             }
         }
 

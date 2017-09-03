@@ -19,8 +19,8 @@ public class Box {
         this.y1 = y1;
         this.x2 = x2;
         this.y2 = y2;
-        this.cx = x2 - x1;
-        this.cy = y2 - y1;
+        this.cx = (x2 - x1) / 2 + x1;
+        this.cy = (y2 - y1) / 2 + y1;
         this.maxColor = maxColor;
     }
 

@@ -17,4 +17,9 @@ class Vector {
     public double distance() {
         return Math.sqrt((deltaX ^ 2) + (deltaY ^ 2));
     }
+
+    @Override
+    public String toString() {
+        return "<" + deltaX + "," + deltaY + ">";
+    }
 }
