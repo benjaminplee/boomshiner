@@ -14,15 +14,15 @@ import java.util.List;
 import timber.log.Timber;
 
 public class Images {
-    public static void draw(Bitmap bitmap, List<Box> boxes, int color) {
+    public static void draw(Bitmap bitmap, List<Box> boxes) {
         Canvas canvas = new Canvas(bitmap);
 
         Paint paint = new Paint();
         paint.setStyle(Paint.Style.STROKE);
-        paint.setColor(color);
         paint.setAntiAlias(false);
 
         for (Box box : boxes) {
+            paint.setColor(box.maxColor);
             canvas.drawRect(new Rect(box.x1, box.y1, box.x2, box.y2), paint);
         }
     }

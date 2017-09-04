@@ -11,7 +11,9 @@ import android.support.test.runner.AndroidJUnit4;
 import android.support.test.uiautomator.By;
 import android.support.test.uiautomator.UiDevice;
 import android.support.test.uiautomator.Until;
+import android.util.DisplayMetrics;
 import android.util.SparseIntArray;
+import android.view.WindowManager;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -22,13 +24,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Predicate;
 
 import timber.log.Timber;
 
-import static android.support.test.espresso.matcher.ViewMatchers.assertThat;
 import static com.yardspoon.boomshiner.Utils.pixelColorInHex;
 import static org.hamcrest.core.IsNull.notNullValue;
+import static org.junit.Assert.assertThat;
 
 @RunWith(AndroidJUnit4.class)
 public class ExampleInstrumentedTest {
@@ -37,44 +38,56 @@ public class ExampleInstrumentedTest {
     private static final int LAUNCH_TIMEOUT_MS = 5000;
     private static final int MEDIUM_PAUSE_TIMEOUT_MS = 2000;
     private static final int LONG_PAUSE_TIMEOUT_MS = 8000;
-    private static final int SHORT_PAUSE_TIMEOUT_MS = 50;
+    private static final int SHORT_PAUSE_TIMEOUT_MS = 10;
 
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
 
-    private UiDevice device;
-    private List<Screenshot> screenshots;
     private int displayHeight;
     private int displayWidth;
+    private int softButtonHeight;
+    private int effectiveDisplayHeight;
+
+    private List<Screenshot> screenshots;
+    private UiDevice device;
     private File picsDir;
+    private Context appContext;
+
+    private final boolean startFromScratch = true;
 
     @Before
     public void setUp() {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
 
-        device.pressHome();
+        if (startFromScratch) {
+            device.pressHome();
 
-        final String launcherPackage = device.getLauncherPackageName();
-        assertThat(launcherPackage, notNullValue());
-        device.wait(Until.hasObject(By.pkg(launcherPackage).depth(0)), LAUNCH_TIMEOUT_MS);
+            final String launcherPackage = device.getLauncherPackageName();
+            assertThat(launcherPackage, notNullValue());
+            device.wait(Until.hasObject(By.pkg(launcherPackage).depth(0)), LAUNCH_TIMEOUT_MS);
 
-        Context context = InstrumentationRegistry.getContext();
-        final Intent intent = context.getPackageManager().getLaunchIntentForPackage(BOOMSHINE_PACKAGE);
-        if (intent == null) {
-            throw new RuntimeException("Boomshine not installed");
+            Context context = InstrumentationRegistry.getContext();
+            final Intent intent = context.getPackageManager().getLaunchIntentForPackage(BOOMSHINE_PACKAGE);
+            if (intent == null) {
+                throw new RuntimeException("Boomshine not installed");
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            context.startActivity(intent);
         }
-        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
-        context.startActivity(intent);
 
         device.wait(Until.hasObject(By.pkg(BOOMSHINE_PACKAGE).depth(0)), LAUNCH_TIMEOUT_MS);
 
-        Context appContext = InstrumentationRegistry.getTargetContext();
+        appContext = InstrumentationRegistry.getTargetContext();
         picsDir = appContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
         Timber.d("Pics Dir: %s", picsDir.getPath());
         screenshots = new ArrayList<>();
 
         displayHeight = device.getDisplayHeight();
         displayWidth = device.getDisplayWidth();
+        softButtonHeight = getSoftButtonsBarHeight();
+        effectiveDisplayHeight = displayHeight - softButtonHeight;
+
+        Timber.d("Dimensions: %s x %s", displayWidth, displayHeight);
     }
 
     @Test
@@ -132,7 +145,9 @@ public class ExampleInstrumentedTest {
     public void run_boomshiner() throws Exception {
         Timber.i("Boomshiner started");
 
-        getIntoTheGame();
+        if(startFromScratch) {
+            getIntoTheGame();
+        }
 
         Utils.time("Take screenshot", this::takeScreenShot);
         Utils.pause(SHORT_PAUSE_TIMEOUT_MS);
@@ -171,17 +186,18 @@ public class ExampleInstrumentedTest {
         List<Match> matches = new ArrayList<>(firstSamples.size());
 
         for (Box firstSample : firstSamples) {
-            for (Box secondSample : secondSamples) {
-                matches.add(new Match(firstSample, secondSample));
-            }
-
-//            List<Box> matchingColors = new ArrayList<>();
-
-//            for (Box secondSample : secondSamplesCopy) {
-//                if (secondSample.maxColor == firstSample.maxColor) {
-//                    matchingColors.add(secondSample);
-//                }
+//            for (Box secondSample : secondSamples) {
+//                matches.add(new Match(firstSample, secondSample));
 //            }
+
+            List<Box> matchingColors = new ArrayList<>();
+
+            for (Box secondSample : secondSamplesCopy) {
+                if (secondSample.maxColor == firstSample.maxColor) {
+                    matches.add(new Match(firstSample, secondSample));
+                    matchingColors.add(secondSample);
+                }
+            }
 //
 //            if (matchingColors.isEmpty()) {
 //                Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
@@ -204,8 +220,8 @@ public class ExampleInstrumentedTest {
 //            }
         }
 
-        Images.draw(third, firstSamples, Color.GRAY);
-        Images.draw(third, secondSamples, Color.YELLOW);
+        Images.draw(third, firstSamples);
+        Images.draw(third, secondSamples);
 
         long firstSecondDelta = findings.get(1).screenshot.nanoTime - findings.get(0).screenshot.nanoTime;
         long secondThirdDelta = findings.get(2).screenshot.nanoTime - findings.get(1).screenshot.nanoTime;
@@ -245,15 +261,22 @@ public class ExampleInstrumentedTest {
 
         Utils.time("processing pixels", () -> {
             int rowSkip = 10;
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
 
-            for (int y = 0; y < height; y += rowSkip) {
-                for (int x = 0; x < width; x += 1) {
+            for (int y = 0; y < effectiveDisplayHeight; y += rowSkip) {
+//                Timber.v("ANALYZING ROW: %s", y);
+
+                // Skip row if starting with black since it is the buttons area
+                if (bitmap.getPixel(0, y) == Color.BLACK) {
+                    Timber.v("Skipping row %s since it starts with black and is probably the menu buttons.", y);
+                    break;
+                }
+
+                for (int x = 0; x < displayWidth; x += 1) {
                     int color = bitmap.getPixel(x, y);
 
-                    if (!isBackground(color)) {
+//                    Timber.v("PIXEL (%s,%s:%s)", x, y, color);
 
+                    if (!isBackground(color)) {
                         boolean alreadyContained = false;
                         for (Box box : finding.boxes) {
                             if (box.contains(x, y)) {
@@ -263,7 +286,7 @@ public class ExampleInstrumentedTest {
                         }
 
                         if (!alreadyContained) {
-                            Box boundingBox = findBoundingBox(bitmap, x, y);
+                            Box boundingBox = findBoundingBox(bitmap, x, y, displayWidth, effectiveDisplayHeight);
                             Timber.i("Found box: %s", boundingBox);
                             finding.boxes.add(boundingBox);
                         }
@@ -273,8 +296,8 @@ public class ExampleInstrumentedTest {
         });
 
         Utils.time("Reviewing finding", finding::review);
-        Utils.time("drawing likely target boxes on bitmap", () -> Images.draw(bitmap, finding.likelyTargets, Color.WHITE));
-        Utils.time("drawing other boxes target boxes on bitmap", () -> Images.draw(bitmap, finding.unLikelyTargets, Color.RED));
+        Utils.time("drawing likely target boxes on bitmap", () -> Images.draw(bitmap, finding.likelyTargets));
+        Utils.time("drawing other boxes target boxes on bitmap", () -> Images.draw(bitmap, finding.unLikelyTargets));
     }
 
     public static boolean isBackground(int color) {
@@ -323,7 +346,7 @@ public class ExampleInstrumentedTest {
         return (priorDirection + 4) % 8;
     }
 
-    public static Box findBoundingBox(Bitmap bitmap, int startX, int startY) {
+    public static Box findBoundingBox(Bitmap bitmap, int startX, int startY, int width, int height) {
 
         int offset = 1;
 
@@ -349,8 +372,8 @@ public class ExampleInstrumentedTest {
 
 //            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
-            if (candidateX >= 0 && candidateX < bitmap.getWidth() &&
-                    candidateY >= 0 && candidateY < bitmap.getHeight() &&
+            if (candidateX >= 0 && candidateX < width &&
+                    candidateY >= 0 && candidateY < height &&
                     !isBackground(bitmap.getPixel(candidateX, candidateY))) {
 //                Log.v(TAG, "Found next pixel in border!");
                 foundX = candidateX;
@@ -367,9 +390,19 @@ public class ExampleInstrumentedTest {
             direction = nextDirection(direction);
         } while (foundX != startX || foundY != startY || direction != 0);
 
-        int maxColor = findMaxColor(bitmap, minX, minY, maxX, maxY);
+        if (hasBlackAtItsCore(bitmap, minX, minY, maxX, maxY)) {
+            return Box.NULL;
+        }
 
-        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, maxColor);
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findMaxColor(bitmap, minX, minY, maxX, maxY), isNearEdge(minX, minY, maxX, maxY, width, height));
+    }
+
+    private static boolean isNearEdge(int minX, int minY, int maxX, int maxY, int width, int height) {
+        return minX <= 1 || minY <= 1 || maxX > (width - 2) || maxY > (height - 2);
+    }
+
+    private static boolean hasBlackAtItsCore(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+        return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
     public static int findMaxColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
@@ -392,6 +425,22 @@ public class ExampleInstrumentedTest {
             }
         }
         return maxColor;
+    }
+
+    // https://stackoverflow.com/questions/29398929/how-get-height-of-the-status-bar-and-soft-key-buttons-bar
+    private int getSoftButtonsBarHeight() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        WindowManager windowManager = (WindowManager) appContext.getSystemService(Context.WINDOW_SERVICE);
+        windowManager.getDefaultDisplay().getMetrics(metrics);
+        int usableHeight = metrics.heightPixels;
+        windowManager.getDefaultDisplay().getRealMetrics(metrics);
+        int realHeight = metrics.heightPixels;
+
+        if (realHeight > usableHeight) {
+            return realHeight - usableHeight;
+        }
+
+        return 0;
     }
 
 }
