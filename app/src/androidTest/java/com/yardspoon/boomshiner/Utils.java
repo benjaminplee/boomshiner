@@ -1,17 +1,8 @@
 package com.yardspoon.boomshiner;
 
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Rect;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.List;
 
 import timber.log.Timber;
 
@@ -21,7 +12,7 @@ public class Utils {
         action.run();
         long after = System.nanoTime();
         long elapsed = (after - before) / 1000 / 1000; // convert to ms
-        Timber.d("Time: [%s] took #s ms", msg, elapsed);
+        Timber.d("Time: [%s] took %s ms", msg, elapsed);
     }
 
     public static void pause(long targetMs) {

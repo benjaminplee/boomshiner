@@ -94,7 +94,7 @@ public class ExampleInstrumentedTest {
             for (int x = 0; x < width; x += 1) {
                 int color = bitmap.getPixel(x, y);
 
-                if (!isBoomshineBackground(color)) {
+                if (!isBackground(color)) {
                     Integer prior = foundColors.get(color);
 
                     if (prior == null) {
@@ -229,7 +229,6 @@ public class ExampleInstrumentedTest {
         Finding finding = new Finding(screenshot);
         Bitmap bitmap = Images.getBitmap(screenshot.file);
 
-//        analyzeColors(bitmap);
         analyzePositions(bitmap, finding);
 
         Timber.d("writing out png");
@@ -253,7 +252,7 @@ public class ExampleInstrumentedTest {
                 for (int x = 0; x < width; x += 1) {
                     int color = bitmap.getPixel(x, y);
 
-                    if (!ExampleInstrumentedTest.isBoomshineBackground(color)) {
+                    if (!isBackground(color)) {
 
                         boolean alreadyContained = false;
                         for (Box box : finding.boxes) {
@@ -264,7 +263,7 @@ public class ExampleInstrumentedTest {
                         }
 
                         if (!alreadyContained) {
-                            Box boundingBox = ContourTracer.findBoundingBox(bitmap, x, y, ExampleInstrumentedTest::isBoomshineBackground);
+                            Box boundingBox = findBoundingBox(bitmap, x, y);
                             Timber.i("Found box: %s", boundingBox);
                             finding.boxes.add(boundingBox);
                         }
@@ -278,7 +277,7 @@ public class ExampleInstrumentedTest {
         Utils.time("drawing other boxes target boxes on bitmap", () -> Images.draw(bitmap, finding.unLikelyTargets, Color.RED));
     }
 
-    public static boolean isBoomshineBackground(int color) {
+    public static boolean isBackground(int color) {
         return color == BACKGROUND_GREEN_PIXEL_COLOR || color == WHITE_TEXT_PIXEL_COLOR || color == Color.BLACK;
     }
 
@@ -290,6 +289,109 @@ public class ExampleInstrumentedTest {
     private void takeScreenShot() {
         screenshots.add(new Screenshot(picsDir, device));
         Timber.d("Screenshot file created");
+    }
+
+    public static int nextX(int priorX, int direction) {
+        if (direction == 0 || direction == 1 || direction == 7) {
+            return priorX - 1;
+        }
+
+        if (direction == 3 || direction == 4 || direction == 5) {
+            return priorX + 1;
+        }
+
+        return priorX;
+    }
+
+    public static int nextY(int priorY, int direction) {
+        if (direction == 1 || direction == 2 || direction == 3) {
+            return priorY - 1;
+        }
+
+        if (direction == 5 || direction == 6 || direction == 7) {
+            return priorY + 1;
+        }
+
+        return priorY;
+    }
+
+    public static int nextDirection(int priorDirection) {
+        return (priorDirection + 1) % 8;
+    }
+
+    public static int flipDirection(int priorDirection) {
+        return (priorDirection + 4) % 8;
+    }
+
+    public static Box findBoundingBox(Bitmap bitmap, int startX, int startY) {
+
+        int offset = 1;
+
+        // DIRECTIONS
+        // 1 2 3
+        // 0 * 4
+        // 7 6 5
+
+//        Log.v(TAG, "Looking for bounding from " + startX + "," + startY);
+
+        int minX = startX;
+        int minY = startY;
+        int maxX = startX;
+        int maxY = startY;
+
+        int foundX = startX;
+        int foundY = startY;
+        int direction = 1; // Assume coming in for initial find from left (direction 0), so go to "next"
+
+        do {
+            int candidateX = nextX(foundX, direction);
+            int candidateY = nextY(foundY, direction);
+
+//            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
+
+            if (candidateX >= 0 && candidateX < bitmap.getWidth() &&
+                    candidateY >= 0 && candidateY < bitmap.getHeight() &&
+                    !isBackground(bitmap.getPixel(candidateX, candidateY))) {
+//                Log.v(TAG, "Found next pixel in border!");
+                foundX = candidateX;
+                foundY = candidateY;
+
+                direction = flipDirection(direction);
+
+                minX = Math.min(minX, foundX);
+                minY = Math.min(minY, foundY);
+                maxX = Math.max(maxX, foundX);
+                maxY = Math.max(maxY, foundY);
+            }
+
+            direction = nextDirection(direction);
+        } while (foundX != startX || foundY != startY || direction != 0);
+
+        int maxColor = findMaxColor(bitmap, minX, minY, maxX, maxY);
+
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, maxColor);
+    }
+
+    public static int findMaxColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+        SparseIntArray colors = new SparseIntArray(32);
+        for (int x = minX; x < maxX; x++) {
+            for (int y = minY; y < maxY; y++) {
+                int color = bitmap.getPixel(x, y);
+                if (!isBackground(color)) {
+                    colors.put(color, colors.get(color, 0) + 1);
+                }
+            }
+        }
+        int maxColorCount = 0;
+        int maxColor = 0;
+        for (int i = 0; i < colors.size(); i++) {
+            int colorCount = colors.valueAt(i);
+            if (colorCount > maxColorCount) {
+                maxColorCount = colorCount;
+                maxColor = colors.keyAt(i);
+            }
+        }
+        return maxColor;
     }
 
 }
