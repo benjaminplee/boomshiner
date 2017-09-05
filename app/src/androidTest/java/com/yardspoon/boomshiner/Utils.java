@@ -25,7 +25,7 @@ public class Utils {
         String green = Integer.toHexString(Color.green(pixel)).toUpperCase();
         String blue = Integer.toHexString(Color.blue(pixel)).toUpperCase();
 
-        return "[" + red + "|" + green + "|" + blue + "]";
+        return "#" + red + "|" + green + "|" + blue;
     }
 
 }

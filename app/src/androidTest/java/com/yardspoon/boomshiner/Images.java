@@ -22,7 +22,7 @@ public class Images {
         paint.setAntiAlias(false);
 
         for (Box box : boxes) {
-            paint.setColor(box.maxColor);
+            paint.setColor(box.colorSignature.getAColor());
             canvas.drawRect(new Rect(box.x1, box.y1, box.x2, box.y2), paint);
         }
     }

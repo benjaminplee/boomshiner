@@ -2,7 +2,7 @@ package com.yardspoon.boomshiner;
 
 public class Box {
 
-    public static final Box NULL = new Box(0, 0, 0, 0, 0, true);
+    public static final Box NULL = new Box(0, 0, 0, 0, ColorSignature.NULL, true);
     private final int likelyTargetSize = 46;
     private final int likelyTargetMin = 20; // less than half; in case we are on edge
     private final int likelyTargetMax = 250; // 5 wide; may need to bump up for higher levels
@@ -11,19 +11,19 @@ public class Box {
     public final int y1;
     public final int x2;
     public final int y2;
-    public final int maxColor;
+    public final ColorSignature colorSignature;
     public final int cx;
     public final int cy;
     public final boolean nearEdge;
 
-    public Box(int x1, int y1, int x2, int y2, int maxColor, boolean nearEdge) {
+    public Box(int x1, int y1, int x2, int y2, ColorSignature colorSignature, boolean nearEdge) {
         this.x1 = x1;
         this.y1 = y1;
         this.x2 = x2;
         this.y2 = y2;
+        this.colorSignature = colorSignature;
         this.cx = (x2 - x1) / 2 + x1;
         this.cy = (y2 - y1) / 2 + y1;
-        this.maxColor = maxColor;
         this.nearEdge = nearEdge;
     }
 
@@ -33,7 +33,7 @@ public class Box {
 
     @Override
     public String toString() {
-        return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + Utils.pixelColorInHex(maxColor) + "]";
+        return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + colorSignature + "]";
     }
 
     private String toPointString(int x, int y) {

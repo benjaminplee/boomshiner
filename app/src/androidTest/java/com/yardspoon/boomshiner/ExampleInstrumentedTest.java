@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Environment;
+import android.support.annotation.NonNull;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.runner.AndroidJUnit4;
 import android.support.test.uiautomator.By;
@@ -53,7 +54,7 @@ public class ExampleInstrumentedTest {
     private File picsDir;
     private Context appContext;
 
-    private final boolean startFromScratch = false;
+    private final boolean startFromScratch = true;
 
     @Before
     public void setUp() {
@@ -190,12 +191,9 @@ public class ExampleInstrumentedTest {
 //                matches.add(new Match(firstSample, secondSample));
 //            }
 
-            List<Box> matchingColors = new ArrayList<>();
-
             for (Box secondSample : secondSamplesCopy) {
-                if (secondSample.maxColor == firstSample.maxColor) {
+                if (firstSample.colorSignature.equals(secondSample.colorSignature)) {
                     matches.add(new Match(firstSample, secondSample));
-                    matchingColors.add(secondSample);
                 }
             }
 //
@@ -405,7 +403,34 @@ public class ExampleInstrumentedTest {
         return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
-    public static int findSignatureColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+    public static ColorSignature findSignatureColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+        SparseIntArray colors = parseColors(bitmap, minX, minY, maxX, maxY);
+
+        ColorSignature colorSignature = new ColorSignature();
+
+        int maxColorCount = 0;
+        for (int i = 0; i < colors.size(); i++) {
+            int colorCount = colors.valueAt(i);
+            if (colorCount > maxColorCount) {
+                maxColorCount = colorCount;
+            }
+        }
+
+        double ninetyPercentCountThreshold = maxColorCount * 0.9;
+
+        for (int i = 0; i < colors.size(); i++) {
+            int colorCount = colors.valueAt(i);
+            if (colorCount > ninetyPercentCountThreshold) {
+                colorSignature.add(colors.keyAt(i));
+            }
+        }
+
+        Timber.v("Identified color signature: %s", colorSignature);
+        return colorSignature;
+    }
+
+    @NonNull
+    private static SparseIntArray parseColors(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
         SparseIntArray colors = new SparseIntArray(32);
         for (int x = minX; x < maxX; x++) {
             for (int y = minY; y < maxY; y++) {
@@ -415,43 +440,7 @@ public class ExampleInstrumentedTest {
                 }
             }
         }
-
-        return findSignatureColor(colors);
-    }
-
-    private static int findSignatureColor(SparseIntArray colors) {
-        int maxColor = 0;
-
-
-        int maxColorCount = 0;
-        for (int i = 0; i < colors.size(); i++) {
-            int colorCount = colors.valueAt(i);
-            if (colorCount > maxColorCount) {
-                maxColorCount = colorCount;
-                maxColor = colors.keyAt(i);
-            }
-        }
-
-        double ninetyPercentCountThreshold = maxColorCount * 0.9;
-
-        int count = 0;
-        for (int i = 0; i < colors.size(); i++) {
-            int colorCount = colors.valueAt(i);
-            if (colorCount < ninetyPercentCountThreshold) {
-
-                maxColorCount = colorCount;
-                maxColor = colors.keyAt(i);
-            }
-        }
-
-
-
-
-
-
-
-//        Timber.v("Found max color %s with count %s", Utils.pixelColorInHex(maxColor), maxColorCount);
-        return maxColor;
+        return colors;
     }
 
     // https://stackoverflow.com/questions/29398929/how-get-height-of-the-status-bar-and-soft-key-buttons-bar
