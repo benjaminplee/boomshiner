@@ -53,7 +53,7 @@ public class ExampleInstrumentedTest {
     private File picsDir;
     private Context appContext;
 
-    private final boolean startFromScratch = true;
+    private final boolean startFromScratch = false;
 
     @Before
     public void setUp() {
@@ -394,7 +394,7 @@ public class ExampleInstrumentedTest {
             return Box.NULL;
         }
 
-        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findMaxColor(bitmap, minX, minY, maxX, maxY), isNearEdge(minX, minY, maxX, maxY, width, height));
+        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(bitmap, minX, minY, maxX, maxY), isNearEdge(minX, minY, maxX, maxY, width, height));
     }
 
     private static boolean isNearEdge(int minX, int minY, int maxX, int maxY, int width, int height) {
@@ -405,7 +405,7 @@ public class ExampleInstrumentedTest {
         return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
-    public static int findMaxColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
+    public static int findSignatureColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
         SparseIntArray colors = new SparseIntArray(32);
         for (int x = minX; x < maxX; x++) {
             for (int y = minY; y < maxY; y++) {
@@ -415,8 +415,15 @@ public class ExampleInstrumentedTest {
                 }
             }
         }
-        int maxColorCount = 0;
+
+        return findSignatureColor(colors);
+    }
+
+    private static int findSignatureColor(SparseIntArray colors) {
         int maxColor = 0;
+
+
+        int maxColorCount = 0;
         for (int i = 0; i < colors.size(); i++) {
             int colorCount = colors.valueAt(i);
             if (colorCount > maxColorCount) {
@@ -424,6 +431,26 @@ public class ExampleInstrumentedTest {
                 maxColor = colors.keyAt(i);
             }
         }
+
+        double ninetyPercentCountThreshold = maxColorCount * 0.9;
+
+        int count = 0;
+        for (int i = 0; i < colors.size(); i++) {
+            int colorCount = colors.valueAt(i);
+            if (colorCount < ninetyPercentCountThreshold) {
+
+                maxColorCount = colorCount;
+                maxColor = colors.keyAt(i);
+            }
+        }
+
+
+
+
+
+
+
+//        Timber.v("Found max color %s with count %s", Utils.pixelColorInHex(maxColor), maxColorCount);
         return maxColor;
     }
 

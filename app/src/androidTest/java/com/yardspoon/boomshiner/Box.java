@@ -33,7 +33,7 @@ public class Box {
 
     @Override
     public String toString() {
-        return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + maxColor + "]";
+        return "Box[" + toPointString(x1, y1) + "," + toPointString(x2, y2) + "," + isLikelyTarget() + "," + Utils.pixelColorInHex(maxColor) + "]";
     }
 
     private String toPointString(int x, int y) {
