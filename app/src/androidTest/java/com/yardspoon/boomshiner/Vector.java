@@ -15,7 +15,7 @@ class Vector {
     }
 
     public double distance() {
-        return Math.sqrt((deltaX ^ 2) + (deltaY ^ 2));
+        return Math.sqrt(Math.pow(deltaX, 2) + Math.pow(deltaY, 2));
     }
 
     @Override

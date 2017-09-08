@@ -22,6 +22,9 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,12 +40,13 @@ public class ExampleInstrumentedTest {
 
     private static final String BOOMSHINE_PACKAGE = "com.bantambytes.android.game.boomshine";
     private static final int LAUNCH_TIMEOUT_MS = 5000;
-    private static final int MEDIUM_PAUSE_TIMEOUT_MS = 2000;
+    private static final int MEDIUM_PAUSE_TIMEOUT_MS = 4000;
     private static final int LONG_PAUSE_TIMEOUT_MS = 8000;
     private static final int SHORT_PAUSE_TIMEOUT_MS = 10;
 
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
+    private static final int MIN_COLOR_COUNT_THRESHOLD = 25;
 
     private int displayHeight;
     private int displayWidth;
@@ -54,7 +58,7 @@ public class ExampleInstrumentedTest {
     private File picsDir;
     private Context appContext;
 
-    private final boolean startFromScratch = true;
+    private final boolean startFromScratch = false;
 
     @Before
     public void setUp() {
@@ -146,14 +150,18 @@ public class ExampleInstrumentedTest {
     public void run_boomshiner() throws Exception {
         Timber.i("Boomshiner started");
 
-        if(startFromScratch) {
+        if (startFromScratch) {
             getIntoTheGame();
         }
 
+        // 4 for analysis
         Utils.time("Take screenshot", this::takeScreenShot);
-        Utils.pause(SHORT_PAUSE_TIMEOUT_MS);
         Utils.time("Take screenshot", this::takeScreenShot);
-        Utils.pause(SHORT_PAUSE_TIMEOUT_MS);
+        Utils.time("Take screenshot", this::takeScreenShot);
+        Utils.time("Take screenshot", this::takeScreenShot);
+
+        // 5th to check predictions
+        Utils.pause(MEDIUM_PAUSE_TIMEOUT_MS);
         Utils.time("Take screenshot", this::takeScreenShot);
 
         List<Finding> findings = new ArrayList<>();
@@ -177,64 +185,38 @@ public class ExampleInstrumentedTest {
     private void analyze(List<Finding> findings) {
         Timber.i("Analyzing findings");
 
-        List<Box> firstSamples = findings.get(0).likelyTargets;
-        List<Box> secondSamples = findings.get(1).likelyTargets;
-        List<Box> secondSamplesCopy = new ArrayList<>(secondSamples);
+        Finding lastFinding = findings.get(findings.size() - 1);
+        Bitmap last = Images.getBitmap(lastFinding.screenshot.file);
 
-        Finding thirdFinding = findings.get(2);
-        Bitmap third = Images.getBitmap(thirdFinding.screenshot.file);
+        for (int i = 0; i < findings.size() - 1; i++) {
+            Finding firstFinding = findings.get(i);
+            Finding nextFinding = findings.get(i + 1);
+            List<Box> findingBoxs = firstFinding.likelyTargets;
+            List<Box> nextFindingBoxs = nextFinding.likelyTargets;
 
-        List<Match> matches = new ArrayList<>(firstSamples.size());
+            Images.draw(last, findingBoxs);
 
-        for (Box firstSample : firstSamples) {
-//            for (Box secondSample : secondSamples) {
-//                matches.add(new Match(firstSample, secondSample));
-//            }
+            for (Box first : findingBoxs) {
+                for (Box second : nextFindingBoxs) {
+                    if (first.colorSignature.equals(second.colorSignature)) {
+                        Match match = new Match(first, second);
 
-            for (Box secondSample : secondSamplesCopy) {
-                if (firstSample.colorSignature.equals(secondSample.colorSignature)) {
-                    matches.add(new Match(firstSample, secondSample));
+                        long knownDelta = nextFinding.screenshot.nanoTime - firstFinding.screenshot.nanoTime;
+                        long projectionDelta = lastFinding.screenshot.nanoTime - firstFinding.screenshot.nanoTime;
+                        double deltaRatio = (double) projectionDelta / (double) knownDelta;
+
+                        Images.draw(last, match.start, match.vector, Color.GRAY);
+                        Images.draw(last, match.end, match.vector.multiply(deltaRatio), Color.YELLOW);
+                    }
                 }
             }
-//
-//            if (matchingColors.isEmpty()) {
-//                Log.w(TAG, "Unable to match sample " + firstSample + " to anything in second sample");
-//            } else {
-//                Log.d(TAG, "Found match ...");
-////                Log.d(TAG, Arrays.toString(matchingColors.toArray()));
-////                Box closestMatch = Collections.min(matchingColors, (box1, box2) -> (int)(firstSample.distanceTo(box1) - firstSample.distanceTo(box2)));
-//
-//                for (Box matchingColor : matchingColors) {
-//                    Match match = new Match(firstSample, matchingColor);
-//                    Log.d(TAG, "  Possible match: " + match);
-////                    secondSamplesCopy.remove(closestMatch);
-//                    matches.add(match);
-//                }
-
-//                Match match = new Match(firstSample, closestMatch);
-//                Log.d(TAG, "Found match: " + match);
-//                secondSamplesCopy.remove(closestMatch);
-//                matches.add(match);
-//            }
         }
 
-        Images.draw(third, firstSamples);
-        Images.draw(third, secondSamples);
-
-        long firstSecondDelta = findings.get(1).screenshot.nanoTime - findings.get(0).screenshot.nanoTime;
-        long secondThirdDelta = findings.get(2).screenshot.nanoTime - findings.get(1).screenshot.nanoTime;
-        double multiplier = (double) secondThirdDelta / (double) firstSecondDelta;
-
-        for (Match match : matches) {
-            Images.draw(third, match.start, match.vector, Color.GRAY);
-            Images.draw(third, match.end, match.vector.multiply(multiplier), Color.YELLOW);
-        }
-
-        Timber.d("writing out third image");
-        Images.write(third, thirdFinding.screenshot.reviewedFile);
+        Timber.d("writing out last image");
+        Images.write(last, lastFinding.screenshot.reviewedFile);
 
         Timber.d("recycling mutable bitmap");
-        third.recycle();
+        last.recycle();
     }
 
     private Finding reviewScreenshot(Screenshot screenshot) {
@@ -284,9 +266,9 @@ public class ExampleInstrumentedTest {
                         }
 
                         if (!alreadyContained) {
-                            Box boundingBox = findBoundingBox(bitmap, x, y, displayWidth, effectiveDisplayHeight);
-                            Timber.i("Found box: %s", boundingBox);
-                            finding.boxes.add(boundingBox);
+                            Collection<Box> boxes = findBoundingBoxes(bitmap, x, y, displayWidth, effectiveDisplayHeight);
+                            Timber.i("Found boxes: %s", Arrays.toString(boxes.toArray()));
+                            finding.boxes.addAll(boxes);
                         }
                     }
                 }
@@ -308,6 +290,7 @@ public class ExampleInstrumentedTest {
     }
 
     private void takeScreenShot() {
+        Utils.pause(SHORT_PAUSE_TIMEOUT_MS);
         screenshots.add(new Screenshot(picsDir, device));
         Timber.d("Screenshot file created");
     }
@@ -344,7 +327,9 @@ public class ExampleInstrumentedTest {
         return (priorDirection + 4) % 8;
     }
 
-    public static Box findBoundingBox(Bitmap bitmap, int startX, int startY, int width, int height) {
+    public static Collection<Box> findBoundingBoxes(Bitmap bitmap, int startX, int startY, int width, int height) {
+
+        Collection<Box> boxes = new ArrayList<>();
 
         int offset = 1;
 
@@ -389,10 +374,14 @@ public class ExampleInstrumentedTest {
         } while (foundX != startX || foundY != startY || direction != 0);
 
         if (hasBlackAtItsCore(bitmap, minX, minY, maxX, maxY)) {
-            return Box.NULL;
+            return Collections.singleton(Box.NULL);
         }
 
-        return new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(bitmap, minX, minY, maxX, maxY), isNearEdge(minX, minY, maxX, maxY, width, height));
+        SparseIntArray colorSpread = parseColors(bitmap, minX, minY, maxX, maxY);
+
+        boxes.add(new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(colorSpread), isNearEdge(minX, minY, maxX, maxY, width, height)));
+
+        return boxes;
     }
 
     private static boolean isNearEdge(int minX, int minY, int maxX, int maxY, int width, int height) {
@@ -403,14 +392,29 @@ public class ExampleInstrumentedTest {
         return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
-    public static ColorSignature findSignatureColor(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
-        SparseIntArray colors = parseColors(bitmap, minX, minY, maxX, maxY);
+    public static ColorSignature findSignatureColor(SparseIntArray colorSpread) {
+        int size = colorSpread.size();
+        if (size < 5) {
+            for (int i = 0; i < size; i++) {
+                int color = colorSpread.keyAt(i);
+
+                Timber.v("  Color %s compared to neighbors: ", Utils.pixelColorInHex(color));
+
+                for (int j = 0; j < size; j++) {
+                    int other = colorSpread.keyAt(j);
+
+                    if (other != color) {
+                        Timber.v("    > %s : %s", Utils.pixelColorInHex(other), Utils.colorDistance(color, other));
+                    }
+                }
+            }
+        }
 
         ColorSignature colorSignature = new ColorSignature();
 
         int maxColorCount = 0;
-        for (int i = 0; i < colors.size(); i++) {
-            int colorCount = colors.valueAt(i);
+        for (int i = 0; i < colorSpread.size(); i++) {
+            int colorCount = colorSpread.valueAt(i);
             if (colorCount > maxColorCount) {
                 maxColorCount = colorCount;
             }
@@ -418,10 +422,10 @@ public class ExampleInstrumentedTest {
 
         double ninetyPercentCountThreshold = maxColorCount * 0.9;
 
-        for (int i = 0; i < colors.size(); i++) {
-            int colorCount = colors.valueAt(i);
+        for (int i = 0; i < colorSpread.size(); i++) {
+            int colorCount = colorSpread.valueAt(i);
             if (colorCount > ninetyPercentCountThreshold) {
-                colorSignature.add(colors.keyAt(i));
+                colorSignature.add(colorSpread.keyAt(i));
             }
         }
 
@@ -432,6 +436,7 @@ public class ExampleInstrumentedTest {
     @NonNull
     private static SparseIntArray parseColors(Bitmap bitmap, int minX, int minY, int maxX, int maxY) {
         SparseIntArray colors = new SparseIntArray(32);
+
         for (int x = minX; x < maxX; x++) {
             for (int y = minY; y < maxY; y++) {
                 int color = bitmap.getPixel(x, y);
@@ -440,6 +445,20 @@ public class ExampleInstrumentedTest {
                 }
             }
         }
+
+        int size = colors.size();
+        int[] toRemove = new int[size];
+        for (int i = 0; i < size; i++) {
+            if (colors.valueAt(i) < MIN_COLOR_COUNT_THRESHOLD) {
+                toRemove[i] = colors.keyAt(i);
+            } else {
+                toRemove[i] = -1;
+            }
+        }
+        for (int aToRemove : toRemove) {
+            colors.delete(aToRemove);
+        }
+
         return colors;
     }
 
