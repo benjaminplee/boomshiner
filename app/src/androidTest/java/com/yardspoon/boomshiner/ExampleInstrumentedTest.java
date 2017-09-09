@@ -13,6 +13,7 @@ import android.support.test.uiautomator.By;
 import android.support.test.uiautomator.UiDevice;
 import android.support.test.uiautomator.Until;
 import android.util.DisplayMetrics;
+import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.view.WindowManager;
 
@@ -47,6 +48,8 @@ public class ExampleInstrumentedTest {
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
     private static final int MIN_COLOR_COUNT_THRESHOLD = 25;
+
+    private SparseArray<SparseIntArray> colorDistances;
 
     private int displayHeight;
     private int displayWidth;
@@ -93,6 +96,8 @@ public class ExampleInstrumentedTest {
         effectiveDisplayHeight = displayHeight - softButtonHeight;
 
         Timber.d("Dimensions: %s x %s", displayWidth, displayHeight);
+
+        colorDistances = new SparseArray<>();
     }
 
     @Test
@@ -377,9 +382,7 @@ public class ExampleInstrumentedTest {
             return Collections.singleton(Box.NULL);
         }
 
-        SparseIntArray colorSpread = parseColors(bitmap, minX, minY, maxX, maxY);
-
-        boxes.add(new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(colorSpread), isNearEdge(minX, minY, maxX, maxY, width, height)));
+        boxes.add(new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(parseColors(bitmap, minX, minY, maxX, maxY)), isNearEdge(minX, minY, maxX, maxY, width, height)));
 
         return boxes;
     }
@@ -392,28 +395,49 @@ public class ExampleInstrumentedTest {
         return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
+    public int findColorDistance(int a, int b) {
+        if(a == b) {
+            return 0;
+        }
+
+        SparseIntArray a_distances = colorDistances.get(a, new SparseIntArray());
+        int lookupDistance = a_distances.get(b);
+        if(lookupDistance != 0) {
+            return lookupDistance;
+        }
+
+        int calculatedDistance = (int) Utils.colorDistance(a, b);
+
+        a_distances.put(b, calculatedDistance);
+        SparseIntArray b_distances = colorDistances.get(b, new SparseIntArray());
+        b_distances.put(a, calculatedDistance);
+
+        return calculatedDistance;
+    }
+
     public static ColorSignature findSignatureColor(SparseIntArray colorSpread) {
         int size = colorSpread.size();
-        if (size < 5) {
-            for (int i = 0; i < size; i++) {
-                int color = colorSpread.keyAt(i);
 
-                Timber.v("  Color %s compared to neighbors: ", Utils.pixelColorInHex(color));
-
-                for (int j = 0; j < size; j++) {
-                    int other = colorSpread.keyAt(j);
-
-                    if (other != color) {
-                        Timber.v("    > %s : %s", Utils.pixelColorInHex(other), Utils.colorDistance(color, other));
-                    }
-                }
-            }
-        }
+//        if (size < 5) {
+//            for (int i = 0; i < size; i++) {
+//                int color = colorSpread.keyAt(i);
+//
+//                Timber.v("  Color %s compared to neighbors: ", Utils.pixelColorInHex(color));
+//
+//                for (int j = 0; j < size; j++) {
+//                    int other = colorSpread.keyAt(j);
+//
+//                    if (other != color) {
+//                        Timber.v("    > %s : %s", Utils.pixelColorInHex(other), Utils.colorDistance(color, other));
+//                    }
+//                }
+//            }
+//        }
 
         ColorSignature colorSignature = new ColorSignature();
 
         int maxColorCount = 0;
-        for (int i = 0; i < colorSpread.size(); i++) {
+        for (int i = 0; i < size; i++) {
             int colorCount = colorSpread.valueAt(i);
             if (colorCount > maxColorCount) {
                 maxColorCount = colorCount;
@@ -422,7 +446,7 @@ public class ExampleInstrumentedTest {
 
         double ninetyPercentCountThreshold = maxColorCount * 0.9;
 
-        for (int i = 0; i < colorSpread.size(); i++) {
+        for (int i = 0; i < size; i++) {
             int colorCount = colorSpread.valueAt(i);
             if (colorCount > ninetyPercentCountThreshold) {
                 colorSignature.add(colorSpread.keyAt(i));
