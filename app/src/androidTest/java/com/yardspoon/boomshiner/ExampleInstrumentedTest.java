@@ -23,12 +23,7 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import timber.log.Timber;
 
@@ -47,20 +42,21 @@ public class ExampleInstrumentedTest {
 
     private static final int BACKGROUND_GREEN_PIXEL_COLOR = -16764623;
     private static final int WHITE_TEXT_PIXEL_COLOR = -9204084;
+    private static final int COLOR_DIFF_FOR_SIMILAR = 50;
+
     private static final int MIN_COLOR_COUNT_THRESHOLD = 25;
+    private static final int BOX_MINMAX_OFFSET = 1;
 
-    private SparseArray<SparseIntArray> colorDistances;
-
+    private static final SparseArray<SparseIntArray> colorDistances = new SparseArray<>();
     private int displayHeight;
     private int displayWidth;
-    private int softButtonHeight;
-    private int effectiveDisplayHeight;
 
+    private int effectiveDisplayHeight;
     private List<Screenshot> screenshots;
     private UiDevice device;
     private File picsDir;
-    private Context appContext;
 
+    private Context appContext;
     private final boolean startFromScratch = false;
 
     @Before
@@ -92,12 +88,9 @@ public class ExampleInstrumentedTest {
 
         displayHeight = device.getDisplayHeight();
         displayWidth = device.getDisplayWidth();
-        softButtonHeight = getSoftButtonsBarHeight();
-        effectiveDisplayHeight = displayHeight - softButtonHeight;
+        effectiveDisplayHeight = displayHeight - getSoftButtonsBarHeight();
 
         Timber.d("Dimensions: %s x %s", displayWidth, displayHeight);
-
-        colorDistances = new SparseArray<>();
     }
 
     @Test
@@ -107,7 +100,7 @@ public class ExampleInstrumentedTest {
         takeScreenShot();
         Bitmap bitmap = Images.getBitmap(screenshots.get(0).file);
 
-        Map<Integer, Integer> foundColors = new HashMap<>();
+        SparseIntArray foundColors = new SparseIntArray();
 
         int rowSkip = 5;
         int height = bitmap.getHeight();
@@ -118,21 +111,16 @@ public class ExampleInstrumentedTest {
                 int color = bitmap.getPixel(x, y);
 
                 if (!isBackground(color)) {
-                    Integer prior = foundColors.get(color);
-
-                    if (prior == null) {
-                        prior = 0;
-                    }
-
-                    foundColors.put(color, prior + 1);
+                    foundColors.put(color, foundColors.get(color, 0) + 1);
                 }
             }
         }
 
-        for (Integer pixel : foundColors.keySet()) {
-            Integer count = foundColors.get(pixel);
-            if (count > 50) {
-                Timber.d("Found significant color: " + pixelColorInHex(pixel) + " " + count + " times -- [" + pixel + "]");
+        for (int i = 0; i < foundColors.size(); i++) {
+            int pixel = foundColors.keyAt(i);
+
+            if (foundColors.get(pixel) > 50) {
+                Timber.d("Found significant color: " + pixelColorInHex(pixel) + " " + foundColors.get(pixel) + " times -- [" + pixel + "]");
             }
         }
     }
@@ -161,9 +149,9 @@ public class ExampleInstrumentedTest {
 
         // 4 for analysis
         Utils.time("Take screenshot", this::takeScreenShot);
-        Utils.time("Take screenshot", this::takeScreenShot);
-        Utils.time("Take screenshot", this::takeScreenShot);
-        Utils.time("Take screenshot", this::takeScreenShot);
+//        Utils.time("Take screenshot", this::takeScreenShot);
+//        Utils.time("Take screenshot", this::takeScreenShot);
+//        Utils.time("Take screenshot", this::takeScreenShot);
 
         // 5th to check predictions
         Utils.pause(MEDIUM_PAUSE_TIMEOUT_MS);
@@ -174,7 +162,7 @@ public class ExampleInstrumentedTest {
             Utils.time("Review screenshot", () -> findings.add(reviewScreenshot(screenshot)));
         }
 
-        Utils.time("Analyze findings took", () -> analyze(findings));
+//        Utils.time("Analyze findings took", () -> analyze(findings));
 
         Timber.i("Boomshiner finished");
     }
@@ -220,7 +208,7 @@ public class ExampleInstrumentedTest {
         Timber.d("writing out last image");
         Images.write(last, lastFinding.screenshot.reviewedFile);
 
-        Timber.d("recycling mutable bitmap");
+//        Timber.d("recycling mutable bitmap");
         last.recycle();
     }
 
@@ -235,7 +223,7 @@ public class ExampleInstrumentedTest {
         Timber.d("writing out png");
         Images.write(bitmap, screenshot.analyzedFile);
 
-        Timber.d("recycling mutable bitmap");
+//        Timber.d("recycling mutable bitmap");
         bitmap.recycle();
 
         return finding;
@@ -252,7 +240,7 @@ public class ExampleInstrumentedTest {
 
                 // Skip row if starting with black since it is the buttons area
                 if (bitmap.getPixel(0, y) == Color.BLACK) {
-                    Timber.v("Skipping row %s since it starts with black and is probably the menu buttons.", y);
+//                    Timber.v("Skipping row %s since it starts with black and is probably the menu buttons.", y);
                     break;
                 }
 
@@ -264,16 +252,16 @@ public class ExampleInstrumentedTest {
                     if (!isBackground(color)) {
                         boolean alreadyContained = false;
                         for (Box box : finding.boxes) {
-                            if (box.contains(x, y)) {
+                            if (box.contains(x, y) && areSimilarColors(box.colorSignature.getAColor(), color)) {
                                 alreadyContained = true;
                                 break;
                             }
                         }
 
                         if (!alreadyContained) {
-                            Collection<Box> boxes = findBoundingBoxes(bitmap, x, y, displayWidth, effectiveDisplayHeight);
-                            Timber.i("Found boxes: %s", Arrays.toString(boxes.toArray()));
-                            finding.boxes.addAll(boxes);
+                            Box box = findBoundingBoxes(bitmap, x, y, displayWidth, effectiveDisplayHeight);
+                            Timber.i("Found box: %s", box);
+                            finding.boxes.add(0, box); // Trying to speed up box comparisons
                         }
                     }
                 }
@@ -282,7 +270,7 @@ public class ExampleInstrumentedTest {
 
         Utils.time("Reviewing finding", finding::review);
         Utils.time("drawing likely target boxes on bitmap", () -> Images.draw(bitmap, finding.likelyTargets));
-        Utils.time("drawing other boxes target boxes on bitmap", () -> Images.draw(bitmap, finding.unLikelyTargets));
+        Utils.time("drawing other boxes target boxes on bitmap", () -> Images.draw(bitmap, finding.unLikelyTargets, Color.GRAY));
     }
 
     public static boolean isBackground(int color) {
@@ -332,18 +320,15 @@ public class ExampleInstrumentedTest {
         return (priorDirection + 4) % 8;
     }
 
-    public static Collection<Box> findBoundingBoxes(Bitmap bitmap, int startX, int startY, int width, int height) {
-
-        Collection<Box> boxes = new ArrayList<>();
-
-        int offset = 1;
-
+    public static Box findBoundingBoxes(Bitmap bitmap, int startX, int startY, int width, int height) {
         // DIRECTIONS
         // 1 2 3
         // 0 * 4
         // 7 6 5
 
 //        Log.v(TAG, "Looking for bounding from " + startX + "," + startY);
+
+        int startColor = bitmap.getPixel(startX, startY);
 
         int minX = startX;
         int minY = startY;
@@ -360,31 +345,33 @@ public class ExampleInstrumentedTest {
 
 //            Log.v(TAG, "Candidate: " + candidateX + "," + candidateY + " DIR: " + direction);
 
-            if (candidateX >= 0 && candidateX < width &&
-                    candidateY >= 0 && candidateY < height &&
-                    !isBackground(bitmap.getPixel(candidateX, candidateY))) {
+            if (candidateX >= 0 && candidateX < width && candidateY >= 0 && candidateY < height) {
+                int candidateColor = bitmap.getPixel(candidateX, candidateY);
+
+                if (!isBackground(candidateColor) && areSimilarColors(startColor, candidateColor)) {
 //                Log.v(TAG, "Found next pixel in border!");
-                foundX = candidateX;
-                foundY = candidateY;
+                    foundX = candidateX;
+                    foundY = candidateY;
 
-                direction = flipDirection(direction);
+                    direction = flipDirection(direction);
 
-                minX = Math.min(minX, foundX);
-                minY = Math.min(minY, foundY);
-                maxX = Math.max(maxX, foundX);
-                maxY = Math.max(maxY, foundY);
+                    minX = Math.min(minX, foundX);
+                    minY = Math.min(minY, foundY);
+                    maxX = Math.max(maxX, foundX);
+                    maxY = Math.max(maxY, foundY);
+                }
+
+                direction = nextDirection(direction);
             }
-
-            direction = nextDirection(direction);
         } while (foundX != startX || foundY != startY || direction != 0);
 
-        if (hasBlackAtItsCore(bitmap, minX, minY, maxX, maxY)) {
-            return Collections.singleton(Box.NULL);
-        }
+        ColorSignature signatureColor = hasBlackAtItsCore(bitmap, minX, minY, maxX, maxY) ? ColorSignature.NULL : findSignatureColor(parseColors(bitmap, minX, minY, maxX, maxY));
 
-        boxes.add(new Box(minX - offset, minY - offset, maxX + offset, maxY + offset, findSignatureColor(parseColors(bitmap, minX, minY, maxX, maxY)), isNearEdge(minX, minY, maxX, maxY, width, height)));
+        return new Box(minX - BOX_MINMAX_OFFSET, minY - BOX_MINMAX_OFFSET, maxX + BOX_MINMAX_OFFSET, maxY + BOX_MINMAX_OFFSET, signatureColor, isNearEdge(minX, minY, maxX, maxY, width, height));
+    }
 
-        return boxes;
+    private static boolean areSimilarColors(int colorA, int colorB) {
+        return findColorDistance(colorA, colorB) < COLOR_DIFF_FOR_SIMILAR;
     }
 
     private static boolean isNearEdge(int minX, int minY, int maxX, int maxY, int width, int height) {
@@ -395,14 +382,14 @@ public class ExampleInstrumentedTest {
         return bitmap.getPixel((maxX - minX) / 2 + minX, (maxY - minY) / 2 + minY) == Color.BLACK;
     }
 
-    public int findColorDistance(int a, int b) {
-        if(a == b) {
+    public static int findColorDistance(int a, int b) {
+        if (a == b) {
             return 0;
         }
 
         SparseIntArray a_distances = colorDistances.get(a, new SparseIntArray());
         int lookupDistance = a_distances.get(b);
-        if(lookupDistance != 0) {
+        if (lookupDistance != 0) {
             return lookupDistance;
         }
 
@@ -453,7 +440,7 @@ public class ExampleInstrumentedTest {
             }
         }
 
-        Timber.v("Identified color signature: %s", colorSignature);
+//        Timber.v("Identified color signature: %s", colorSignature);
         return colorSignature;
     }
 

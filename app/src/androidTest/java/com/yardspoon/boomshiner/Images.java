@@ -14,15 +14,27 @@ import java.util.List;
 import timber.log.Timber;
 
 public class Images {
+
     public static void draw(Bitmap bitmap, List<Box> boxes) {
+        draw(bitmap, boxes, null);
+    }
+
+    public static void draw(Bitmap bitmap, List<Box> boxes, Integer fixedColor) {
         Canvas canvas = new Canvas(bitmap);
 
         Paint paint = new Paint();
         paint.setStyle(Paint.Style.STROKE);
         paint.setAntiAlias(false);
 
+        if (fixedColor != null) {
+            paint.setColor(fixedColor);
+        }
+
         for (Box box : boxes) {
-            paint.setColor(box.colorSignature.getAColor());
+            if (fixedColor == null) {
+                paint.setColor(box.colorSignature.getAColor());
+            }
+
             canvas.drawRect(new Rect(box.x1, box.y1, box.x2, box.y2), paint);
         }
     }
@@ -33,7 +45,7 @@ public class Images {
             out = new FileOutputStream(file.getPath());
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
         } catch (Exception e) {
-            Timber.e(e,"Couldn't write out bitmap");
+            Timber.e(e, "Couldn't write out bitmap");
         } finally {
             try {
                 if (out != null) {
